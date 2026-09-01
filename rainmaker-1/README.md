@@ -1,5 +1,7 @@
 # Rainmaker v0.1
 
+**Live at: https://rainmaker-jjfw.onrender.com** — open this on your iPhone in Safari, then Share → Add to Home Screen.
+
 A first working version of the personal VN stock dashboard from the design doc.
 It's a real app with real market data — but it implements a simplified subset
 of the full knowledge base, not everything in the design doc yet. See "What's
@@ -67,6 +69,8 @@ worth flagging) will push straight to your phone.
 
 ## What's implemented in v0.1
 
+- **Short-term trading discipline**: Rainmaker is tuned for 1–2 month holds (up to ~3 months only for the most convincing setups), requires at least two independent signals to agree before suggesting a new buy, and rejects setups too thin to clear your ~0.4% round-trip trading cost. A held position past its holding window gets flagged to close regardless of price. None of this promises a specific return — it's a discipline layer, not a guarantee.
+- **Automatic exit alerts**: any holding that hits its stop-loss, reaches its target, or runs past its holding-window limit fires an immediate, high-priority push — separate from the routine twice-daily check — so you don't have to wait for 10:30/14:30 to find out you need to act.
 - **Real-time-ish price data** for any VN ticker, via the free `vnstock`
   library (a few minutes of caching, not tick-by-tick — this is a personal
   dashboard, not a trading terminal).
