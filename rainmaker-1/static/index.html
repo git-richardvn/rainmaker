@@ -198,6 +198,18 @@
   .cb-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
     color:var(--watch); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12.5px; }
   .cb-banner[hidden]{ display:none; }
+  .gh-banner{ display:flex; align-items:center; gap:9px; background:var(--loss-soft); border:1px solid rgba(255,109,130,0.35);
+    color:var(--loss); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12px; line-height:1.5; }
+  .gh-banner[hidden]{ display:none; }
+  .gh-banner a{ color:inherit; }
+  .review-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
+    color:var(--watch); border-radius:12px; padding:9px 14px; margin-top:10px; font-size:11.5px; line-height:1.5; }
+  .target-row{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:10px; }
+  .target-row .num{ font-family:'Sora',sans-serif; font-weight:700; }
+  .plan-line{ font-size:13px; line-height:1.55; color:var(--text); margin-bottom:8px; }
+  .plan-line:last-child{ margin-bottom:0; }
+  .acc-row{ display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-top:1px solid var(--hairline-soft); font-size:12px; }
+  .acc-row .tk{ font-family:'IBM Plex Mono',monospace; color:var(--text-muted); }
 
   .extra-line{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:8px; padding:6px 10px; }
   .extra-line b{ color:var(--text-faint); font-weight:600; }
@@ -237,6 +249,15 @@
   </div>
 
   <div class="cb-banner" id="cbBanner" hidden></div>
+  <div class="gh-banner" id="ghBanner" hidden></div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>2-week profit target</h2>
+      <span class="count" id="targetPeriodLabel">—</span>
+    </div>
+    <div id="targetBody" style="padding:18px 20px;"><div class="empty">Loading…</div></div>
+  </div>
 
   <div class="panel">
     <div class="panel-head">
@@ -249,6 +270,11 @@
 
   <div class="section-label">Worth a look outside your portfolio</div>
   <div class="watchbar" id="watchbar"><div class="empty">Loading…</div></div>
+
+  <details class="alertlog" id="accuracyPanel">
+    <summary>App prediction accuracy</summary>
+    <div id="accuracyBody"></div>
+  </details>
 
   <details class="alertlog" id="alertlog">
     <summary>Today's alerts</summary>
@@ -279,7 +305,8 @@
     <h3>Position sizing</h3>
     <div class="field"><label>Account size (₫)</label><input id="sAccountSize" type="number" inputmode="decimal" placeholder="e.g. 500000000"></div>
     <div class="field"><label>Risk per trade (%)</label><input id="sRiskPct" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 1.5"></div>
-    <div style="font-size:11px; color:var(--text-faint); margin-bottom:6px;">Used to suggest how many shares to buy on new setups, sized so a stop-loss hit only costs this % of your account — never entered as a live order for you.</div>
+    <div class="field"><label>Monthly profit target (%)</label><input id="sMonthlyTarget" type="number" inputmode="decimal" step="0.5" placeholder="e.g. 15"></div>
+    <div style="font-size:11px; color:var(--text-faint); margin-bottom:6px;">Account size + risk % size new buy suggestions so a stop-loss hit only costs that % of your account. The monthly target splits into a 2-week goal shown above your portfolio — never entered as a live order for you.</div>
     <div class="err" id="sErr" hidden></div>
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelSettings">Cancel</button>
@@ -390,6 +417,39 @@ function heroHTML(bench){
       (beating ? `You're beating the market by <b class="win">${gap} points</b>.` : `You're behind the market by <b class="lose">${gap} points</b> right now.`)}</div>`;
 }
 
+function targetHTML(p, plan){
+  if (!p || p.account_size == null){
+    return `<div style="color:var(--text-muted); font-size:13px;">Set your account size in Settings (⚙︎) to turn on target tracking — it splits your monthly goal into a 2-week target and tracks your actual P/L against it.</div>`;
+  }
+  const paceColor = plan.pace === 'ahead' ? 'var(--gain)' : (plan.pace === 'behind' ? 'var(--loss)' : 'var(--watch)');
+  return `
+    <div class="target-row">
+      <div><div class="num mono" style="font-size:30px; color:${paceColor}">${fmtPct(p.actual_pct)}</div><div class="lbl" style="font-size:11.5px; color:var(--text-muted);">This period so far</div></div>
+      <div style="color:var(--text-faint); padding-bottom:8px;">of</div>
+      <div><div class="num mono" style="font-size:22px; color:var(--text-muted);">${fmtPct(p.target_pct)}</div><div class="lbl" style="font-size:11.5px; color:var(--text-muted);">target (from ${p.monthly_target_pct}%/month)</div></div>
+    </div>
+    <div style="font-size:11.5px; color:var(--text-faint); margin-bottom:12px;">${p.days_remaining} of ${p.days_total} days left this period · P/L so far: ${fmtVND(p.pnl_vnd_period)}</div>
+    ${(plan.lines||[]).map(l => `<div class="plan-line">${l}</div>`).join('')}
+  `;
+}
+
+function accuracyHTML(acc, review){
+  if (!acc || acc.overall_evaluated === 0){
+    return `<div class="alert-row"><div class="alert-body">No "buy" calls have completed their review window yet — each one is graded ${acc && acc.min_sample ? '' : ''}about two weeks after it's made. Check back soon.</div></div>`;
+  }
+  const color = acc.overall_accuracy_pct >= acc.accuracy_target_pct ? 'var(--gain)' : 'var(--loss)';
+  const rows = Object.entries(acc.by_ticker || {})
+    .sort((a,b) => b[1].evaluated - a[1].evaluated)
+    .map(([t,v]) => `<div class="acc-row"><span class="tk">${t}</span><span>${v.correct}/${v.evaluated} correct — <b style="color:${v.accuracy_pct>=acc.accuracy_target_pct?'var(--gain)':'var(--loss)'}">${v.accuracy_pct}%</b></span></div>`)
+    .join('');
+  return `
+    <div class="alert-row"><div class="alert-body">Overall: <b style="color:${color}">${acc.overall_accuracy_pct}%</b> correct across ${acc.overall_evaluated} graded "buy" calls (target ${acc.accuracy_target_pct}%).
+    ${review && review.active ? `<div class="review-banner">⏸ Accuracy review active — ${review.reason}</div>` : ''}
+    </div></div>
+    ${rows}
+  `;
+}
+
 let _loadInFlight = false;
 async function load(){
   // The free data source is throttled and a full scan can take a while —
@@ -417,6 +477,22 @@ async function load(){
   } else {
     cbBanner.hidden = true;
   }
+
+  const ghBanner = document.getElementById('ghBanner');
+  if (d.gh_sync_enabled === false){
+    ghBanner.hidden = false;
+    ghBanner.innerHTML = `⚠ <span><b>Your data isn't auto-backed-up yet.</b> A free-tier restart can wipe your portfolio and settings — <a href="/api/backup" target="_blank">download a backup</a> now, or see deployment-status.md for the free, permanent-storage setup (a few minutes, one time).</span>`;
+  } else {
+    ghBanner.hidden = true;
+  }
+
+  document.getElementById('targetPeriodLabel').textContent = d.period_progress ? d.period_progress.period_label : '';
+  document.getElementById('targetBody').innerHTML = targetHTML(d.period_progress, d.strategic_plan || {lines:[]});
+
+  const acc = d.prediction_accuracy;
+  document.getElementById('accuracyPanel').querySelector('summary').textContent =
+    `App prediction accuracy${acc && acc.overall_accuracy_pct != null ? ` (${acc.overall_accuracy_pct}%)` : ''}`;
+  document.getElementById('accuracyBody').innerHTML = accuracyHTML(acc, d.review_mode);
 
   window._settings = d.settings || {};
 
@@ -474,6 +550,7 @@ const settingsOverlay = document.getElementById('settingsOverlay');
 document.getElementById('openSettings').onclick = () => {
   document.getElementById('sAccountSize').value = window._settings?.account_size ?? '';
   document.getElementById('sRiskPct').value = window._settings?.risk_per_trade_pct ?? 1.5;
+  document.getElementById('sMonthlyTarget').value = window._settings?.monthly_target_pct ?? 15;
   document.getElementById('sErr').hidden = true;
   settingsOverlay.hidden = false;
 };
@@ -481,13 +558,14 @@ document.getElementById('cancelSettings').onclick = () => { settingsOverlay.hidd
 document.getElementById('saveSettings').onclick = async () => {
   const account_size = parseFloat(document.getElementById('sAccountSize').value) || null;
   const risk_per_trade_pct = parseFloat(document.getElementById('sRiskPct').value) || null;
+  const monthly_target_pct = parseFloat(document.getElementById('sMonthlyTarget').value) || null;
   const err = document.getElementById('sErr');
   if (risk_per_trade_pct != null && (risk_per_trade_pct <= 0 || risk_per_trade_pct > 10)){
     err.textContent = 'Risk per trade should be a small number, like 1-3%.'; err.hidden = false; return;
   }
   await fetch('/api/settings', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ account_size, risk_per_trade_pct })
+    body: JSON.stringify({ account_size, risk_per_trade_pct, monthly_target_pct })
   });
   settingsOverlay.hidden = true;
   load();
