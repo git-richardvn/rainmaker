@@ -450,6 +450,15 @@ function accuracyHTML(acc, review){
   `;
 }
 
+function showLoadError(message){
+  document.getElementById('statusPill').innerHTML = `<span class="live off">Connection error</span>`;
+  document.getElementById('heroBody').innerHTML = `<div style="color:var(--loss); font-size:13.5px;">${message} Tap Refresh above to try again.</div>`;
+  const busy = '<div class="empty">Couldn\'t load — tap Refresh above.</div>';
+  document.getElementById('targetBody').innerHTML = busy;
+  document.getElementById('portfolioList').innerHTML = busy;
+  document.getElementById('watchbar').innerHTML = busy;
+}
+
 let _loadInFlight = false;
 async function load(){
   // The free data source is throttled and a full scan can take a while —
@@ -457,12 +466,27 @@ async function load(){
   if (_loadInFlight) return;
   _loadInFlight = true;
   let res, d;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 110000);  // longer than a worst-case full scan, so this only fires on a genuine hang
   try {
-    res = await fetch('/api/dashboard');
+    try {
+      res = await fetch('/api/dashboard', { signal: controller.signal });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    if (!res.ok){
+      throw new Error(`The server returned an error (status ${res.status}).`);
+    }
     d = await res.json();
-  } finally {
+  } catch (e) {
     _loadInFlight = false;
+    const msg = e.name === 'AbortError'
+      ? "The dashboard scan is taking longer than usual (the free data source is rate-limited)."
+      : "Couldn't reach the server right now.";
+    showLoadError(msg);
+    return;
   }
+  _loadInFlight = false;
 
   const ms = d.market_status;
   document.getElementById('statusPill').innerHTML =
