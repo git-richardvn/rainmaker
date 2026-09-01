@@ -298,13 +298,28 @@ def get_predictions():
 
 @app.post("/api/watchlist")
 def post_watch(w: WatchTicker):
+    """Adds the ticker, and also patches it straight into the cached scan so
+    it shows up immediately -- without this, a newly added ticker wouldn't
+    appear until the next background scan (up to 15 minutes later)."""
     store.add_watchlist(w.ticker)
-    return {"ok": True}
+    ticker = w.ticker.upper().strip()
+    card = analyze_watchlist_ticker(ticker)
+    with _cache_cond:
+        if _cache_state["data"] is not None:
+            wl = [c for c in _cache_state["data"].get("my_watchlist", []) if c.get("ticker") != ticker]
+            wl.append(card)
+            _cache_state["data"]["my_watchlist"] = wl
+    return {"ok": True, "card": card}
 
 
 @app.delete("/api/watchlist/{ticker}")
 def delete_watch(ticker: str):
     store.remove_watchlist(ticker)
+    ticker = ticker.upper().strip()
+    with _cache_cond:
+        if _cache_state["data"] is not None:
+            wl = [c for c in _cache_state["data"].get("my_watchlist", []) if c.get("ticker") != ticker]
+            _cache_state["data"]["my_watchlist"] = wl
     return {"ok": True}
 
 
