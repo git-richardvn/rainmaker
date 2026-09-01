@@ -80,7 +80,7 @@ worth flagging) will push straight to your phone.
   net-buy/sell is shown when the free data source actually provides it for
   that ticker — never guessed if it's not available.
 - **A watchlist** of tickers you don't hold, screened from a fixed list of
-  ~16 liquid VN30-style names, surfaced when something looks worth a look.
+  ~10 liquid VN30-style names, surfaced when something looks worth a look.
 - **Portfolio vs. VN-Index**: the headline number at the top — are you
   beating the market or not.
 - **Two scheduled checks a day** (10:30 and 14:30 Vietnam time, weekdays),

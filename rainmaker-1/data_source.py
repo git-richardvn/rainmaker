@@ -8,7 +8,9 @@ silently fabricate a number.
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,13 +20,35 @@ log = logging.getLogger("rainmaker.data")
 
 _HISTORY_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
 _FOREIGN_CACHE: dict[str, tuple[float, Optional[float]]] = {}
-_CACHE_TTL_SECONDS = 180  # don't hammer the free source; a 3-minute-old bar is fine for this use case
+_CACHE_TTL_SECONDS = 300  # don't hammer the free source; a 5-minute-old bar is fine for this use case
+
+# vnstock's free/guest tier caps requests at 20/minute and kills the whole
+# process with SystemExit when that's exceeded. Stay well under that with a
+# simple sliding-window throttle shared by every call this app makes.
+_RATE_LOCK = threading.Lock()
+_RATE_WINDOW_SECONDS = 60
+_RATE_MAX_CALLS = 12
+_call_times: deque[float] = deque()
+
+
+def _throttle() -> None:
+    while True:
+        wait = 0.0
+        with _RATE_LOCK:
+            now = time.time()
+            while _call_times and now - _call_times[0] > _RATE_WINDOW_SECONDS:
+                _call_times.popleft()
+            if len(_call_times) < _RATE_MAX_CALLS:
+                _call_times.append(now)
+                return
+            wait = _RATE_WINDOW_SECONDS - (now - _call_times[0]) + 0.5
+        log.info("Throttling vnstock calls to respect free-tier rate limit, sleeping %.1fs", wait)
+        time.sleep(wait)
 
 VNINDEX_SYMBOL = "VNINDEX"
 
 DEFAULT_UNIVERSE = [
-    "VNM", "HPG", "FPT", "VIC", "MWG", "SSI", "VCB", "MSN",
-    "VHM", "GAS", "TCB", "MBB", "ACB", "STB", "VRE", "PLX",
+    "VNM", "HPG", "FPT", "VIC", "MWG", "SSI", "VCB", "MSN", "VHM", "GAS",
 ]
 
 
@@ -61,6 +85,7 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
     last_err = None
     for source in ("VCI", "TCBS"):
         try:
+            _throttle()
             q = Quote(symbol=symbol, source=source)
             df = q.history(start=start, end=end, interval="1D")
             if df is None or len(df) == 0:
@@ -68,7 +93,7 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
             df = _normalize(df)
             _HISTORY_CACHE[symbol] = (now, df)
             return df
-        except Exception as e:  # noqa: BLE001
+        except (Exception, SystemExit) as e:  # noqa: BLE001 — vnstock's rate limiter uses sys.exit()
             last_err = e
             log.warning("history fetch failed for %s via %s: %s", symbol, source, e)
             continue
@@ -85,6 +110,7 @@ def get_foreign_net_today(symbol: str) -> Optional[float]:
 
     try:
         from vnstock.api.trading import Trading
+        _throttle()
         t = Trading(source="VCI")
         board = t.price_board([symbol])
         if board is None or len(board) == 0:
@@ -100,7 +126,7 @@ def get_foreign_net_today(symbol: str) -> Optional[float]:
         net = float(row[buy_cols[0]]) - float(row[sell_cols[0]])
         _FOREIGN_CACHE[symbol] = (now, net)
         return net
-    except Exception as e:  # noqa: BLE001
+    except (Exception, SystemExit) as e:  # noqa: BLE001 — vnstock's rate limiter uses sys.exit()
         log.warning("foreign flow fetch failed for %s: %s", symbol, e)
         _FOREIGN_CACHE[symbol] = (now, None)
         return None

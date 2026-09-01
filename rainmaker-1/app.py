@@ -49,7 +49,9 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None) -> Optional[dict]:
             "message": f"Couldn't fetch price data for {ticker} right now.",
             "detail": str(e),
         }
-    foreign_net = ds.get_foreign_net_today(ticker)
+    # Foreign net-flow is a "nice to have" extra call — only spend the request
+    # budget on it for tickers actually held, not the whole watchlist scan.
+    foreign_net = ds.get_foreign_net_today(ticker) if held else None
     reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
     rec = engine.recommend(reading, held=held)
     if rec is None:
