@@ -104,7 +104,13 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
     start = (datetime.now() - timedelta(days=int(days * 1.6) + 10)).strftime("%Y-%m-%d")
 
     last_err = None
-    for source in ("VCI", "TCBS"):
+    # "TCBS" used to be a valid Quote source in older vnstock releases but no
+    # longer is (the installed version only accepts kbs/vci/msn/dnse/binance/
+    # fmp/fmarket) — a stale fallback here means every VCI miss burns a whole
+    # extra throttled call on a guaranteed-instant failure before finally
+    # giving up, which was quietly doubling scan time. MSN is the valid,
+    # genuinely-different second source.
+    for source in ("VCI", "MSN"):
         try:
             _throttle()
             q = Quote(symbol=symbol, source=source)
