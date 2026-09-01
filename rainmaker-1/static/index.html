@@ -170,6 +170,23 @@
   .btn-cancel{ background:var(--glass); color:var(--text-muted); border:1px solid var(--hairline) !important; }
   .btn-save{ background:var(--aurora); color:#0a0a14; }
   .err{ color:var(--loss); font-size:12px; margin-top:6px; }
+
+  .card{ cursor:pointer; }
+  .watch-chip{ cursor:pointer; }
+
+  /* chart modal */
+  .chart-modal{ max-width:760px; max-height:92vh; overflow-y:auto; }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
+  .modal-head h3{ margin:0; font-size:16px; }
+  .icon-close{ background:none; border:none; color:var(--text-faint); font-size:20px; line-height:1; cursor:pointer; padding:4px; }
+  .chart-price-row{ display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:8px; }
+  .chart-price-row .ticker{ font-size:19px; }
+  .chart-canvas{ height:320px; margin-top:14px; border-radius:12px; overflow:hidden; }
+  .chart-legend{ display:flex; gap:14px; flex-wrap:wrap; margin-top:12px; font-size:11px; color:var(--text-faint); }
+  .chart-legend span{ display:flex; align-items:center; gap:5px; }
+  .chart-legend i{ display:inline-block; width:10px; height:3px; border-radius:2px; }
+  .chart-legend i.dot{ width:8px; height:8px; border-radius:50%; }
+  .chart-note{ font-size:11px; color:var(--text-faint); margin-top:10px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -234,6 +251,17 @@
   </div>
 </div>
 
+<div class="overlay" id="chartOverlay" hidden>
+  <div class="modal chart-modal">
+    <div class="modal-head">
+      <h3>Chart</h3>
+      <button class="icon-close" id="closeChart">✕</button>
+    </div>
+    <div id="chartBody"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 const fmtVND = n => n == null ? '—' : Math.round(n).toLocaleString('en-US') + '₫';
 const fmtPct = n => n == null ? '—' : (n > 0 ? '+' : '') + n.toFixed(1) + '%';
@@ -259,7 +287,7 @@ function cardHTML(c, held){
     </div>`;
   }
   return `
-    <div class="card ${cls}">
+    <div class="card ${cls}" onclick="openChart('${c.ticker}')">
       <div class="card-top">
         <div class="ticker-block">
           <span class="ticker">${c.ticker}</span>
@@ -271,7 +299,7 @@ function cardHTML(c, held){
       <div class="why">${c.why}</div>
       ${c.heads_up ? `<div class="heads-up">${c.heads_up}</div>` : ''}
       ${numbers}
-      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<button class="remove-link" onclick="removePosition('${c.position_id}')">Remove</button>`:''}</div>
+      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<button class="remove-link" onclick="event.stopPropagation(); removePosition('${c.position_id}')">Remove</button>`:''}</div>
     </div>`;
 }
 
@@ -316,7 +344,7 @@ async function load(){
 
   const wl = d.watchlist;
   document.getElementById('watchbar').innerHTML = wl.length
-    ? wl.map(c => `<div class="watch-chip"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}</span></div>`).join('')
+    ? wl.map(c => `<div class="watch-chip" onclick="openChart('${c.ticker}')"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}</span></div>`).join('')
     : `<div class="empty">Nothing standing out right now.</div>`;
 
   const alerts = d.alerts;
@@ -355,6 +383,141 @@ document.getElementById('saveAdd').onclick = async () => {
   document.getElementById('fDate').value = '';
   load();
 };
+
+let liveChart = null;
+
+function destroyChart(){
+  if (liveChart){ try { liveChart.remove(); } catch(e){} liveChart = null; }
+}
+
+const chartOverlay = document.getElementById('chartOverlay');
+document.getElementById('closeChart').onclick = () => { chartOverlay.hidden = true; destroyChart(); };
+chartOverlay.addEventListener('click', (e) => { if (e.target === chartOverlay){ chartOverlay.hidden = true; destroyChart(); } });
+
+async function openChart(ticker){
+  chartOverlay.hidden = false;
+  document.getElementById('chartBody').innerHTML = `<div class="empty">Loading ${ticker}…</div>`;
+  let d;
+  try {
+    const res = await fetch('/api/chart/' + encodeURIComponent(ticker));
+    if (!res.ok) throw new Error('bad response');
+    d = await res.json();
+  } catch (e) {
+    document.getElementById('chartBody').innerHTML = `<div class="empty">Couldn't load chart data for ${ticker} right now.</div>`;
+    return;
+  }
+  renderChart(d);
+}
+
+function renderChart(d){
+  const cls = actionClass(d.action);
+  const chgCls = d.change_pct >= 0 ? 'up' : 'down';
+  document.getElementById('chartBody').innerHTML = `
+    <div class="chart-price-row">
+      <span class="ticker mono">${d.ticker}</span>
+      <span class="price mono">${fmtVND(d.price)}</span>
+      <span class="chg ${chgCls} mono">${fmtPct(d.change_pct)}</span>
+      <span class="badge ${cls}">${d.action_label}</span>
+    </div>
+    <div class="why">${d.why}</div>
+    ${d.heads_up ? `<div class="heads-up">${d.heads_up}</div>` : ''}
+    <div class="numbers">
+      ${d.entry != null ? `<span>Entry<b style="color:var(--violet)">${fmtVND(d.entry)}</b></span>` : ''}
+      <span>Stop loss<b style="color:var(--loss)">${fmtVND(d.stop)}</b></span>
+      <span>Take profit<b style="color:var(--gain)">${fmtVND(d.target)}</b></span>
+      ${d.reward_risk != null ? `<span>Reward : risk<b>${d.reward_risk} : 1</b></span>` : ''}
+    </div>
+    <div class="chart-canvas" id="chartCanvas"></div>
+    <div class="chart-legend">
+      <span><i style="background:var(--violet)"></i>SMA 20</span>
+      <span><i style="background:var(--cyan)"></i>SMA 50</span>
+      <span><i style="background:rgba(255,255,255,0.6)"></i>Trendline</span>
+      <span><i class="dot" style="background:var(--loss)"></i>Swing high</span>
+      <span><i class="dot" style="background:var(--gain)"></i>Swing low</span>
+      <span><i style="background:var(--violet); opacity:.6"></i>Entry</span>
+      <span><i style="background:var(--loss); opacity:.6"></i>Stop loss</span>
+      <span><i style="background:var(--gain); opacity:.6"></i>Take profit</span>
+    </div>
+    <div class="chart-note">Support/resistance lines are recent swing highs and lows — a "Liquidity pool" label means price touched that level more than once, which is where professional traders expect stops and orders to cluster. Bars: ${d.bars}.</div>
+  `;
+
+  destroyChart();
+  if (typeof LightweightCharts === 'undefined'){
+    document.getElementById('chartCanvas').innerHTML = '<div class="empty">Chart library failed to load — check your connection and reopen.</div>';
+    return;
+  }
+
+  const el = document.getElementById('chartCanvas');
+  const chart = LightweightCharts.createChart(el, {
+    width: el.clientWidth,
+    height: 320,
+    layout: { background: { color: 'transparent' }, textColor: '#A79FD1', fontFamily: "'Plus Jakarta Sans', sans-serif" },
+    grid: { vertLines: { color: 'rgba(255,255,255,0.05)' }, horzLines: { color: 'rgba(255,255,255,0.05)' } },
+    rightPriceScale: { borderColor: 'rgba(255,255,255,0.09)' },
+    timeScale: { borderColor: 'rgba(255,255,255,0.09)' },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  });
+  liveChart = chart;
+
+  const candleSeries = chart.addCandlestickSeries({
+    upColor: '#3FE3A0', downColor: '#FF6D82', borderVisible: false,
+    wickUpColor: '#3FE3A0', wickDownColor: '#FF6D82',
+  });
+  candleSeries.setData(d.candles.map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
+
+  const volumeSeries = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: '' });
+  volumeSeries.priceScale().applyOptions({ scaleMargins: { top: 0.85, bottom: 0 } });
+  volumeSeries.setData(d.candles.map(c => ({
+    time: c.time, value: c.volume,
+    color: c.close >= c.open ? 'rgba(63,227,160,0.35)' : 'rgba(255,109,130,0.35)',
+  })));
+
+  if (d.sma20 && d.sma20.length > 1){
+    chart.addLineSeries({ color: '#9D7BFF', lineWidth: 1 }).setData(d.sma20);
+  }
+  if (d.sma50 && d.sma50.length > 1){
+    chart.addLineSeries({ color: '#33E4E0', lineWidth: 1 }).setData(d.sma50);
+  }
+  if (d.trendline && d.trendline.points && d.trendline.points.length === 2){
+    chart.addLineSeries({
+      color: 'rgba(255,255,255,0.6)', lineWidth: 2,
+      lineStyle: LightweightCharts.LineStyle.Dashed, lastValueVisible: false, priceLineVisible: false,
+    }).setData(d.trendline.points);
+  }
+
+  if (d.entry != null){
+    candleSeries.createPriceLine({ price: d.entry, color: '#9D7BFF', lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dotted, title: 'Entry' });
+  }
+  if (d.stop != null){
+    candleSeries.createPriceLine({ price: d.stop, color: '#FF6D82', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Stop loss' });
+  }
+  if (d.target != null){
+    candleSeries.createPriceLine({ price: d.target, color: '#3FE3A0', lineWidth: 2, lineStyle: LightweightCharts.LineStyle.Dashed, title: 'Take profit' });
+  }
+  (d.levels || []).forEach(l => {
+    candleSeries.createPriceLine({
+      price: l.price,
+      color: l.type === 'support' ? 'rgba(63,227,160,0.55)' : 'rgba(255,109,130,0.55)',
+      lineWidth: l.touches >= 2 ? 2 : 1,
+      lineStyle: LightweightCharts.LineStyle.Dotted,
+      title: `${l.label}`,
+    });
+  });
+
+  if (d.swings && d.swings.length){
+    candleSeries.setMarkers(
+      [...d.swings].sort((a, b) => a.time.localeCompare(b.time)).map(s => ({
+        time: s.time,
+        position: s.type === 'high' ? 'aboveBar' : 'belowBar',
+        color: s.type === 'high' ? '#FF6D82' : '#3FE3A0',
+        shape: s.type === 'high' ? 'arrowDown' : 'arrowUp',
+        text: '',
+      }))
+    );
+  }
+
+  chart.timeScale().fitContent();
+}
 
 load();
 setInterval(load, 60000);
