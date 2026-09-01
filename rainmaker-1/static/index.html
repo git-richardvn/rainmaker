@@ -216,7 +216,7 @@
 
   <div class="context-strip">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
-    <span>Rainmaker rescans the market every 15 minutes while it's open, and any time you tap Refresh — page loads read the last scan instantly.</span>
+    <span>Rainmaker re-assesses the whole Vietnam market (all HOSE+HNX tickers) at 10:30 and 14:30, re-prices the current shortlist every 15 minutes while the market's open, and any time you tap Refresh — page loads read the last scan instantly.</span>
   </div>
 
   <div class="gh-banner" id="ghBanner" hidden></div>
@@ -328,7 +328,8 @@ function heroHTML(d){
       <div class="hero-gap"><span>·</span><span class="arrow"></span></div>
       <div class="hero-stat"><div class="num mono" style="color:var(--text-muted); font-size:28px;">${accKnown ? acc.overall_accuracy_pct + '%' : '—'}</div><div class="lbl">Recommendation accuracy</div></div>
     </div>
-    <div class="hero-verdict">Last scanned ${d.generated_at || '—'} · ${d.market_status ? d.market_status.label : ''}</div>`;
+    <div class="hero-verdict">Prices updated ${d.generated_at || '—'} · ${d.market_status ? d.market_status.label : ''}</div>
+    <div class="hero-verdict" style="margin-top:2px;">Whole-market reassessment: ${d.market_scan_at || 'not run yet'}</div>`;
 }
 
 function accuracyHTML(acc, review){
