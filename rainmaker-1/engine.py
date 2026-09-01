@@ -328,3 +328,202 @@ def recommend(reading: Reading, held: Optional[dict] = None) -> Optional[Recomme
                                None, "low" if confidence == "low" else "medium",
                                r.price, r.change_pct, entry_price, stop, target, rr, tags)
     return None
+
+
+def explain_reading(reading: Reading, held: Optional[dict] = None) -> Recommendation:
+    """Like recommend(), but never returns None. recommend() deliberately hides
+    tickers it wouldn't suggest buying (downtrends, distribution) from the
+    watchlist — but when Richard explicitly opens a chart to study a specific
+    ticker, he needs an honest read either way, including "this looks weak
+    right now", with real stop/target numbers to annotate the chart."""
+    rec = recommend(reading, held=held)
+    if rec is not None:
+        return rec
+    r = reading
+    entry_price = held["entry_price"] if held else r.price
+    stop = round(min(r.support or entry_price * 0.95, entry_price * 0.95), 0) if r.support else round(entry_price * 0.95, 0)
+    target = round(max(r.resistance or entry_price * 1.1, entry_price * 1.1), 0) if r.resistance else round(entry_price * 1.1, 0)
+    rr = _reward_risk(entry_price, stop, target)
+    if r.trend == "down":
+        label, why = "Avoid for now", ("This is in a clear downtrend with no sign of big buyers stepping in — "
+                                        "not a place to open a new position.")
+    elif r.flow == "distribution" or r.bearish_divergence:
+        label, why = "Caution — weakening", ("Momentum is fading and the volume pattern suggests money is "
+                                              "quietly leaving this stock — worth watching closely before acting.")
+    else:
+        label, why = "No strong signal", "Price action here is unremarkable right now — no strong signal either way."
+    return Recommendation(r.ticker, "watch", label, why, None, r.confidence_cap, r.price, r.change_pct,
+                           None, stop, target, rr, ["chart-lookup-fallback"])
+
+
+# ---------------------------------------------------------------------------
+# Chart overlays — pivots, liquidity levels, trendline, moving averages.
+# Everything here is derived straight from price/volume, same as the rest of
+# the engine: no fabricated levels, and nothing drawn without at least a
+# couple of real touches to back it up.
+# ---------------------------------------------------------------------------
+
+def find_pivots(df: pd.DataFrame, left: int = 3, right: int = 3):
+    """Fractal-style pivot highs/lows: a bar whose high/low is the strict
+    extreme of the (left + 1 + right)-bar window centered on it. Returns two
+    lists of (index, price) tuples, index relative to df's own row order."""
+    highs = df["high"].astype(float).values
+    lows = df["low"].astype(float).values
+    n = len(df)
+    pivot_highs, pivot_lows = [], []
+    for i in range(left, n - right):
+        wh = highs[i - left:i + right + 1]
+        if highs[i] == wh.max() and int(np.argmax(wh)) == left:
+            pivot_highs.append((i, float(highs[i])))
+        wl = lows[i - left:i + right + 1]
+        if lows[i] == wl.min() and int(np.argmin(wl)) == left:
+            pivot_lows.append((i, float(lows[i])))
+    return pivot_highs, pivot_lows
+
+
+def _cluster_levels(pivots: list, tolerance_pct: float = 0.006) -> list:
+    """Group pivot prices that sit within tolerance_pct of each other —
+    repeated touches at nearly the same price are exactly what "liquidity
+    pooling above/below the market" means in practice (equal highs/lows where
+    stops and orders cluster)."""
+    prices = sorted(p for _, p in pivots)
+    clusters: list = []
+    for p in prices:
+        for c in clusters:
+            if abs(p - c["avg"]) / c["avg"] <= tolerance_pct:
+                c["prices"].append(p)
+                c["avg"] = sum(c["prices"]) / len(c["prices"])
+                break
+        else:
+            clusters.append({"avg": p, "prices": [p]})
+    return [{"price": round(c["avg"], 2), "touches": len(c["prices"])} for c in clusters]
+
+
+def compute_liquidity_levels(df: pd.DataFrame, lookback: int = 140) -> list:
+    """Support/resistance levels worth marking on a chart: recent swing highs
+    and lows, weighted up when the same level was touched more than once
+    (a real liquidity pool, not just noise)."""
+    n = len(df)
+    if n < 15:
+        return []
+    start = max(0, n - lookback)
+    sub = df.iloc[start:].reset_index(drop=True)
+    pivot_highs, pivot_lows = find_pivots(sub, left=3, right=3)
+    price = float(df["close"].iloc[-1])
+    resistances = [
+        {"price": c["price"], "type": "resistance", "touches": c["touches"],
+         "label": "Liquidity pool" if c["touches"] >= 2 else "Recent swing high"}
+        for c in _cluster_levels(pivot_highs) if c["price"] > price
+    ]
+    supports = [
+        {"price": c["price"], "type": "support", "touches": c["touches"],
+         "label": "Liquidity pool" if c["touches"] >= 2 else "Recent swing low"}
+        for c in _cluster_levels(pivot_lows) if c["price"] < price
+    ]
+    resistances.sort(key=lambda l: l["price"])
+    supports.sort(key=lambda l: -l["price"])
+    return supports[:3] + resistances[:3]
+
+
+def compute_swing_markers(df: pd.DataFrame, lookback: int = 140, max_points: int = 10) -> list:
+    """Recent pivot points to mark directly on the candles — the visual
+    footprint of where liquidity sits, for the chart itself rather than the
+    price-line list."""
+    n = len(df)
+    if n < 15:
+        return []
+    start = max(0, n - lookback)
+    sub = df.iloc[start:].reset_index(drop=True)
+    pivot_highs, pivot_lows = find_pivots(sub, left=3, right=3)
+    out = []
+    for idx, price in pivot_highs[-max_points:]:
+        out.append({"time": str(df["time"].iloc[start + idx].date()), "price": round(price, 2), "type": "high"})
+    for idx, price in pivot_lows[-max_points:]:
+        out.append({"time": str(df["time"].iloc[start + idx].date()), "price": round(price, 2), "type": "low"})
+    return out
+
+
+def compute_trendline(df: pd.DataFrame, trend: str, lookback: int = 90) -> Optional[dict]:
+    """A trendline only gets drawn when there are at least two real pivots
+    (higher lows for an uptrend, lower highs for a downtrend) whose fitted
+    slope actually agrees with the trend direction — never a line forced
+    onto data that doesn't support it."""
+    n = len(df)
+    if n < 15 or trend not in ("up", "down"):
+        return None
+    start = max(0, n - lookback)
+    sub = df.iloc[start:].reset_index(drop=True)
+    pivot_highs, pivot_lows = find_pivots(sub, left=2, right=2)
+    pts = pivot_lows if trend == "up" else pivot_highs
+    if len(pts) < 2:
+        return None
+    pts = pts[-8:]
+    xs = np.array([p[0] for p in pts], dtype=float)
+    ys = np.array([p[1] for p in pts], dtype=float)
+    try:
+        m, b = np.polyfit(xs, ys, 1)
+    except Exception:
+        return None
+    if trend == "up" and m <= 0:
+        return None
+    if trend == "down" and m >= 0:
+        return None
+    x_start = float(xs.min())
+    x_end = float(len(sub) - 1)
+    y_start = m * x_start + b
+    y_end = m * x_end + b
+    idx_start = min(start + int(round(x_start)), n - 1)
+    idx_end = min(start + int(round(x_end)), n - 1)
+    return {
+        "direction": trend,
+        "points": [
+            {"time": str(df["time"].iloc[idx_start].date()), "value": round(float(y_start), 2)},
+            {"time": str(df["time"].iloc[idx_end].date()), "value": round(float(y_end), 2)},
+        ],
+    }
+
+
+def build_chart_payload(df: pd.DataFrame, reading: Reading, display_bars: int = 140) -> dict:
+    """Everything the frontend needs to draw a professional-looking chart:
+    recent candles, two moving averages, a trendline (when the data actually
+    supports one), and liquidity/support-resistance levels with real touch
+    counts. Entry/stop/target/why come from explain_reading(), not this."""
+    df = df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    n = len(df)
+    start = max(0, n - display_bars)
+    view = df.iloc[start:]
+
+    candles = [
+        {
+            "time": str(row.time.date()),
+            "open": round(float(row.open), 2),
+            "high": round(float(row.high), 2),
+            "low": round(float(row.low), 2),
+            "close": round(float(row.close), 2),
+            "volume": float(row.volume),
+        }
+        for row in view.itertuples()
+    ]
+
+    close = df["close"].astype(float)
+    ma20 = sma(close, 20)
+    ma50 = sma(close, 50)
+
+    def _line(series: pd.Series) -> list:
+        out = []
+        for i in range(start, n):
+            v = series.iloc[i]
+            if not pd.isna(v):
+                out.append({"time": str(df["time"].iloc[i].date()), "value": round(float(v), 2)})
+        return out
+
+    lookback = min(display_bars, n)
+    return {
+        "candles": candles,
+        "sma20": _line(ma20),
+        "sma50": _line(ma50),
+        "trendline": compute_trendline(df, reading.trend, lookback=lookback),
+        "levels": compute_liquidity_levels(df, lookback=lookback),
+        "swings": compute_swing_markers(df, lookback=lookback),
+    }

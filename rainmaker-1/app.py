@@ -208,6 +208,48 @@ def delete_watch(ticker: str):
     return {"ok": True}
 
 
+@app.get("/api/chart/{ticker}")
+def get_chart(ticker: str):
+    """Everything needed to draw a professional-style chart for one ticker:
+    candles, moving averages, a trendline when the data supports one,
+    liquidity/support-resistance levels, and the same honest read (why,
+    entry/stop/target) the dashboard cards use — never hidden here even for
+    tickers Rainmaker wouldn't suggest buying, since this is for Richard to
+    study and discuss, not just a buy signal."""
+    ticker = ticker.upper().strip()
+    try:
+        df = ds.get_history(ticker)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Couldn't fetch chart data for {ticker}: {e}")
+
+    positions = store.list_positions()
+    held_pos = next((p for p in positions if p["ticker"] == ticker), None)
+    held = {"entry_price": held_pos["entry_price"], "qty": held_pos["qty"]} if held_pos else None
+    foreign_net = ds.get_foreign_net_today(ticker) if held else None
+
+    reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
+    rec = engine.explain_reading(reading, held=held)
+    chart = engine.build_chart_payload(df, reading)
+
+    return {
+        "ticker": ticker,
+        "price": reading.price,
+        "change_pct": round(reading.change_pct, 2),
+        "bars": reading.bars,
+        "action": rec.action,
+        "action_label": rec.action_label,
+        "why": rec.why,
+        "heads_up": rec.heads_up,
+        "confidence": rec.confidence,
+        "entry": rec.entry,
+        "stop": rec.stop,
+        "target": rec.target,
+        "reward_risk": rec.reward_risk,
+        "held": held,
+        **chart,
+    }
+
+
 @app.get("/api/backup")
 def get_backup():
     """Download everything as one JSON file. On free hosting, local storage
