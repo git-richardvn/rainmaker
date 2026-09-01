@@ -71,6 +71,11 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None) -> Optional[dict]:
         "reward_risk": rec.reward_risk,
         "basis_tags": rec.basis_tags,
         "bars": reading.bars,
+        "conviction": rec.conviction,
+        "max_hold_days": rec.max_hold_days,
+        "held_days": rec.held_days,
+        "exit_alert": rec.exit_alert,
+        "exit_reason": rec.exit_reason,
     }
 
 
@@ -119,7 +124,7 @@ def build_dashboard() -> dict:
 
     portfolio_cards = []
     for p in positions:
-        card = analyze_ticker(p["ticker"], held={"entry_price": p["entry_price"], "qty": p["qty"]})
+        card = analyze_ticker(p["ticker"], held={"entry_price": p["entry_price"], "qty": p["qty"], "entry_date": p.get("entry_date")})
         if card is None:
             continue
         card["position_id"] = p["id"]
@@ -224,7 +229,7 @@ def get_chart(ticker: str):
 
     positions = store.list_positions()
     held_pos = next((p for p in positions if p["ticker"] == ticker), None)
-    held = {"entry_price": held_pos["entry_price"], "qty": held_pos["qty"]} if held_pos else None
+    held = {"entry_price": held_pos["entry_price"], "qty": held_pos["qty"], "entry_date": held_pos.get("entry_date")} if held_pos else None
     foreign_net = ds.get_foreign_net_today(ticker) if held else None
 
     reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
@@ -245,6 +250,11 @@ def get_chart(ticker: str):
         "stop": rec.stop,
         "target": rec.target,
         "reward_risk": rec.reward_risk,
+        "conviction": rec.conviction,
+        "max_hold_days": rec.max_hold_days,
+        "held_days": rec.held_days,
+        "exit_alert": rec.exit_alert,
+        "exit_reason": rec.exit_reason,
         "held": held,
         **chart,
     }
@@ -287,7 +297,26 @@ def refresh_now():
 
 def run_alert_cycle(manual: bool = False) -> dict:
     dash = build_dashboard()
-    needs_attention = [c for c in dash["portfolio"] if c["action"] in ("sell", "trim")]
+    label = "Manual check" if manual else "Scheduled check"
+
+    # --- exit alerts: unambiguous "act now" cases (stop hit / target hit / time-stop) ---
+    # Sent as their own urgent push, separate from routine sell/trim/new-idea notes,
+    # per Richard's explicit ask: "automatically send alert to me when I need to exit
+    # any ticker." These never get buried in a longer list.
+    exit_cards = [c for c in dash["portfolio"] if c.get("exit_alert")]
+    if exit_cards:
+        exit_lines = [f"🚨 {c['ticker']}: {c['action_label']} — {c.get('exit_reason') or c['why']}"
+                      for c in exit_cards]
+        notify.send(
+            title="Rainmaker — EXIT ALERT",
+            message="\n".join(exit_lines[:5]),
+            priority="urgent",
+        )
+        store.log_alert({"label": f"{label} — EXIT ALERT",
+                          "summary": " / ".join(f"{c['ticker']}: {c['action_label']}" for c in exit_cards)})
+
+    # --- routine notes: everything else worth a look, but not act-now urgent ---
+    needs_attention = [c for c in dash["portfolio"] if c["action"] in ("sell", "trim") and not c.get("exit_alert")]
     new_ideas = [c for c in dash["watchlist"] if c["action"] == "buy"]
 
     lines = []
@@ -296,15 +325,14 @@ def run_alert_cycle(manual: bool = False) -> dict:
     for c in new_ideas:
         lines.append(f"{c['ticker']} (new): {c['action_label']} — {c['why']}")
 
-    label = "Manual check" if manual else "Scheduled check"
     if lines:
         store.log_alert({"label": label, "summary": " / ".join(f"{c['ticker']}: {c['action_label']}"
                                                                   for c in needs_attention + new_ideas)})
         notify.send(
             title="Rainmaker",
-            message="\n".join(lines[:5]) or "Check your portfolio.",
+            message="\n".join(lines[:5]),
         )
-    else:
+    elif not exit_cards:
         store.log_alert({"label": label, "summary": "No action needed — everything holding steady."})
     return dash
 
