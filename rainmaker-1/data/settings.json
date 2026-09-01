@@ -1,0 +1,9 @@
+{
+  "account_size": 500000000.0,
+  "risk_per_trade_pct": 1.5,
+  "monthly_target_pct": 15.0,
+  "accuracy_target_pct": 80.0,
+  "prediction_eval_days": 14,
+  "review_mode": false,
+  "review_mode_reason": null
+}
