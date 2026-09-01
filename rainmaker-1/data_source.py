@@ -62,9 +62,106 @@ DEFAULT_UNIVERSE = [
 # calls/min, itself already under vnstock's hard 20/min) means a full cold
 # scan takes roughly ceil(tickers/12)*60 seconds — 18 tickers is the largest
 # universe that reliably finishes within about a minute and a half, so it
-# doesn't pile up against the frontend's own refresh interval. A bigger scan
-# is possible but belongs in the twice-daily background scheduler, not on
-# every dashboard page load — see deployment-status.md.
+# doesn't pile up against the frontend's own refresh interval. This list is
+# now only the fallback for get_market_universe() below — the normal path
+# fetches the real, full HOSE+HNX listing instead.
+
+_UNIVERSE_CACHE: dict[str, tuple[float, list[str]]] = {}
+_UNIVERSE_TTL_SECONDS = 24 * 3600  # the ticker list itself changes rarely — a day-old copy is fine
+_LIQUIDITY_CACHE: dict[str, tuple[float, list[str]]] = {}
+_LIQUIDITY_TTL_SECONDS = 3600
+
+
+def get_market_universe(group: str = "VNALL") -> list[str]:
+    """Full tradable ticker list for the given vnstock group (default VNALL —
+    every HOSE+HNX-listed stock, i.e. "the whole Vietnam stock market" minus
+    UPCOM/OTC). Cached a day at a time since membership barely changes.
+    Falls back to the hand-picked DEFAULT_UNIVERSE on any failure — a scan
+    that runs on a smaller-but-known-good list beats one that crashes."""
+    now = time.time()
+    cached = _UNIVERSE_CACHE.get(group)
+    if cached and now - cached[0] < _UNIVERSE_TTL_SECONDS:
+        return cached[1]
+    try:
+        from vnstock.api.listing import Listing
+        _throttle()
+        df = Listing().symbols_by_group(group)
+        symbols: list[str] = []
+        if isinstance(df, pd.Series):
+            symbols = [str(s).strip().upper() for s in df.tolist()]
+        elif isinstance(df, pd.DataFrame):
+            col = _first_col(df, "symbol", "ticker") or df.columns[0]
+            symbols = [str(s).strip().upper() for s in df[col].tolist()]
+        else:
+            symbols = [str(s).strip().upper() for s in list(df)]
+        # keep plain equity tickers only — 3-letter alpha, no bonds/CW/funds
+        symbols = [s for s in symbols if len(s) == 3 and s.isalpha()]
+        symbols = sorted(set(symbols))
+        if len(symbols) < 50:  # sanity floor — a near-empty result means something went wrong upstream
+            raise ValueError(f"suspiciously small universe returned ({len(symbols)} tickers)")
+        _UNIVERSE_CACHE[group] = (now, symbols)
+        log.info("Fetched market universe '%s': %d tickers", group, len(symbols))
+        return symbols
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        log.warning("market universe fetch failed for group %s, falling back to DEFAULT_UNIVERSE: %s", group, e)
+        return list(DEFAULT_UNIVERSE)
+
+
+def get_liquidity_ranking(symbols: list[str], batch_size: int = 200) -> list[str]:
+    """Ranks `symbols` by today's trading value/volume (most liquid first), so
+    a huge whole-market universe can be pre-filtered down to a manageable
+    number of candidates before spending throttled per-ticker history calls
+    on them. Uses Trading.price_board(), which accepts a whole list of
+    symbols in a single request — chunked defensively so one oversized
+    request can't fail the whole ranking. Falls back to the input order
+    unchanged if the source or its columns don't cooperate."""
+    if not symbols:
+        return []
+    cache_key = ",".join(sorted(symbols))[:500]
+    now = time.time()
+    cached = _LIQUIDITY_CACHE.get(cache_key)
+    if cached and now - cached[0] < _LIQUIDITY_TTL_SECONDS:
+        return cached[1]
+    try:
+        from vnstock.api.trading import Trading
+        t = Trading(source="VCI")
+        rows = []
+        for i in range(0, len(symbols), batch_size):
+            chunk = symbols[i:i + batch_size]
+            _throttle()
+            board = t.price_board(chunk)
+            if board is None or len(board) == 0:
+                continue
+            board = board.copy()
+            board.columns = [
+                "_".join(str(p) for p in c if str(p) != "").lower() if isinstance(c, tuple) else str(c).lower()
+                for c in board.columns
+            ]
+            rows.append(board)
+        if not rows:
+            raise ValueError("empty price board response")
+        combined = pd.concat(rows, ignore_index=True)
+        sym_col = _first_col(combined, "symbol", "ticker")
+        value_col = _first_col(combined, "total_match_value", "match_value", "totalvalue", "value")
+        volume_col = _first_col(combined, "total_match_vol", "match_vol", "totalvolume", "volume", "vol")
+        rank_col = value_col or volume_col
+        if sym_col is None or rank_col is None:
+            raise ValueError(f"couldn't find symbol/liquidity columns — got {list(combined.columns)}")
+        combined[rank_col] = pd.to_numeric(combined[rank_col], errors="coerce").fillna(0)
+        combined["_sym"] = combined[sym_col].astype(str).str.upper()
+        combined = combined.sort_values(rank_col, ascending=False)
+        ranked = [s for s in combined["_sym"].tolist() if s in symbols]
+        # anything price_board didn't return (delisted/suspended, mismatched
+        # symbol) still belongs somewhere — tack it on the end rather than
+        # silently dropping it from the scan.
+        seen = set(ranked)
+        ranked += [s for s in symbols if s not in seen]
+        _LIQUIDITY_CACHE[cache_key] = (now, ranked)
+        return ranked
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        log.warning("liquidity ranking failed, using unranked order: %s", e)
+        return list(symbols)
+
 
 _INSIDER_CACHE: dict[str, tuple[float, Optional[str]]] = {}
 _EVENT_CACHE: dict[str, tuple[float, Optional[str]]] = {}

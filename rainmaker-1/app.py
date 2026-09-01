@@ -164,31 +164,116 @@ def _run_prediction_maintenance() -> dict:
     return acc
 
 
+# --- whole-market shortlist -------------------------------------------
+#
+# Richard: "expand the recommended stocks. Re-assess the whole Vietnam
+# stock market twice a day to shortlist at least 15 tickers worth attention
+# in priority order." Operationalized as: fetch the full VNALL universe
+# (every HOSE+HNX-listed stock — "the whole market" minus UPCOM/OTC), rank
+# it by today's liquidity so the limited, rate-limited deep-scan budget goes
+# to stocks that are actually tradeable, deep-analyze the most-liquid
+# MAX_DEEP_SCAN of them with the same engine as everywhere else, and keep at
+# least MIN_SHORTLIST in priority order (backfilling with an honest
+# lower-confidence read if fewer than that clear the engine's normal bar).
+# This is expensive — ~150 tickers at 12 calls/min is on the order of
+# 10-15 minutes — so it only runs twice a day (see _ALERT_TIMES in the
+# scheduler below), never inline on a page load or the light cache refresh.
+MAX_DEEP_SCAN = 150
+MIN_SHORTLIST = 15
+MAX_SHORTLIST = 20
+_MARKET_UNIVERSE_GROUP = "VNALL"
+
+
+def _rank_key(c: dict) -> tuple:
+    rank_order = {"buy": 0, "watch": 1}
+    reward_risk = c.get("reward_risk") or 0
+    return (rank_order.get(c["action"], 9), c["confidence"] != "high", -reward_risk)
+
+
+def run_full_market_scan(strict: bool = False) -> dict:
+    """The twice-daily heavy scan described above. Persists its result via
+    store.save_shortlist so it survives a Render restart between runs, and
+    logs a directional prediction for every fresh 'buy' the same way the old
+    per-request scan used to."""
+    universe = ds.get_market_universe(_MARKET_UNIVERSE_GROUP)
+    ranked = ds.get_liquidity_ranking(universe)
+    candidates = ranked[:MAX_DEEP_SCAN]
+
+    cards: list[dict] = []
+    error_tickers: set[str] = set()  # data genuinely unavailable — no point retrying these in the backfill below
+    for t in candidates:
+        card = analyze_ticker(t, strict=strict)
+        if card and not card.get("error"):
+            cards.append(card)
+        elif card and card.get("error"):
+            error_tickers.add(t)
+        # card is None: engine.recommend() found nothing worth surfacing for
+        # this ticker — data was fine, so it's still a fair backfill candidate.
+
+    # Richard asked for at least 15 tickers "worth attention", not only
+    # tickers that clear the engine's normal buy/watch bar — so if the deep
+    # scan came up short, backfill using the same honest always-a-card
+    # fallback the watchlist uses, working down the liquidity ranking (both
+    # the tickers just skipped above and, if needed, ones beyond the
+    # deep-scan cap) until the floor is met.
+    if len(cards) < MIN_SHORTLIST:
+        have = {c["ticker"] for c in cards}
+        for t in ranked:
+            if len(cards) >= MIN_SHORTLIST:
+                break
+            if t in have or t in error_tickers:
+                continue
+            card = analyze_watchlist_ticker(t)
+            have.add(t)
+            if not card.get("error"):
+                cards.append(card)
+
+    cards.sort(key=_rank_key)
+    cards = cards[:MAX_SHORTLIST]
+
+    for c in cards:
+        if c["action"] == "buy" and c.get("entry") and c.get("stop") and c.get("target"):
+            store.log_prediction(c["ticker"], c["entry"], c["stop"], c["target"], c.get("basis_tags", []))
+
+    generated_at = datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M")
+    store.save_shortlist(cards, generated_at)
+    log.info("Full market scan complete: %d/%d universe tickers deep-scanned, %d shortlisted",
+              len(candidates), len(universe), len(cards))
+    return {"generated_at": generated_at, "cards": cards}
+
+
 def build_dashboard() -> dict:
-    """One full scan: grades due predictions, re-reads every ticker on
-    Richard's own watchlist (always shown, whatever the signal), then scans
-    the wider universe for fresh recommendations (only the ones actually
-    worth surfacing). This is the slow, throttled part of the app — see the
-    module docstring for why it runs on a background timer instead of
-    inline per request."""
+    """The fast, frequent path: grades due predictions, re-reads every
+    ticker on Richard's own watchlist (always shown, whatever the signal),
+    and re-prices whatever is currently on the persisted whole-market
+    shortlist (see run_full_market_scan) rather than re-scanning the whole
+    market itself — that heavy work only happens on its own twice-daily
+    schedule. Falls back to the original hardcoded core universe if no
+    shortlist has been persisted yet (e.g. right after a brand-new deploy,
+    before the first full scan has had a chance to run)."""
     accuracy = _run_prediction_maintenance()
     review = store.get_review_mode()
 
     my_tickers = store.list_watchlist()
     my_watchlist = [analyze_watchlist_ticker(t) for t in my_tickers]
 
-    already_scanned = set(my_tickers)
-    recommended = []
-    for t in ds.DEFAULT_UNIVERSE:
-        if t in already_scanned:
-            continue
-        card = analyze_ticker(t, strict=review["active"])
-        if card and not card.get("error"):
-            recommended.append(card)
+    shortlist = store.load_shortlist()
+    shortlist_tickers = [c["ticker"] for c in shortlist.get("cards", []) if c.get("ticker") not in my_tickers]
 
-    rank_order = {"buy": 0, "watch": 1}
-    recommended.sort(key=lambda c: (rank_order.get(c["action"], 9), c["confidence"] != "high"))
-    recommended = recommended[:10]  # at least/around 10 recommended tickers at a time
+    if shortlist_tickers:
+        recommended = [analyze_watchlist_ticker(t) for t in shortlist_tickers]
+        recommended = [c for c in recommended if not c.get("error")]
+    else:
+        recommended = []
+        for t in ds.DEFAULT_UNIVERSE:
+            if t in my_tickers:
+                continue
+            card = analyze_ticker(t, strict=review["active"])
+            if card and not card.get("error"):
+                recommended.append(card)
+
+    recommended.sort(key=_rank_key)
+    recommended = recommended[:MAX_SHORTLIST]
 
     # Log a directional prediction for every fresh "buy" call, so its outcome
     # can be graded once its review window passes (store.log_prediction skips
@@ -199,6 +284,7 @@ def build_dashboard() -> dict:
 
     return {
         "generated_at": datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M"),
+        "market_scan_at": shortlist.get("generated_at"),
         "market_status": market_status(),
         "gh_sync_enabled": gh_sync.enabled(),
         "my_watchlist": my_watchlist,
@@ -413,6 +499,16 @@ def run_alert_cycle(manual: bool = False) -> dict:
     return dash
 
 
+def run_full_scan_and_alert(manual: bool = False) -> dict:
+    """The twice-daily whole-market reassessment: rebuilds the persisted
+    shortlist from a full VNALL scan, then refreshes the served dashboard
+    cache from that new shortlist and fires the same buy-idea alert a
+    normal cycle does."""
+    review = store.get_review_mode()
+    run_full_market_scan(strict=review["active"])
+    return run_alert_cycle(manual=manual)
+
+
 # ---------------------------------------------------------------------------
 # Background scheduler — keeps the scan cache warm and fires the daily alert
 # ---------------------------------------------------------------------------
@@ -433,20 +529,35 @@ def _scheduler_loop():
                 if now.hour == h and now.minute == m and key not in _fired_today:
                     _fired_today.add(key)
                     if now.weekday() < 5:
-                        log.info("Running scheduled alert cycle %s", key)
-                        run_alert_cycle(manual=False)
+                        log.info("Running scheduled full market scan %s", key)
+                        try:
+                            run_full_scan_and_alert(manual=False)
+                        except Exception:  # noqa: BLE001
+                            log.exception("scheduled full market scan failed")
             if len(_fired_today) > 20:
                 _fired_today.clear()
 
             # Keep the recommendation cache warm so page loads never block on
-            # a live scan: refresh once at cold boot, then periodically while
-            # the market is open (prices don't move while it's closed, so
-            # there's no reason to keep re-hitting the rate-limited source).
+            # a live scan. A cold boot with no persisted shortlist yet (a
+            # brand-new deploy, before the first twice-daily scan has ever
+            # run) forces one full market scan regardless of time of day, so
+            # "Recommended stocks" doesn't sit on the small fallback universe
+            # indefinitely; otherwise this is just the light re-price of the
+            # existing shortlist + watchlist, periodically while the market
+            # is open (prices don't move while it's closed).
             ms = market_status()
             due = (time.time() - _last_cache_refresh["ts"]) >= _CACHE_REFRESH_INTERVAL_SEC
-            if _cache_state["data"] is None or (ms["open"] and due):
+            no_shortlist_yet = not store.load_shortlist().get("cards")
+            if _cache_state["data"] is None and no_shortlist_yet:
                 _last_cache_refresh["ts"] = time.time()
-                log.info("Refreshing recommendation cache")
+                log.info("No persisted shortlist yet — running an initial full market scan")
+                try:
+                    run_full_scan_and_alert(manual=False)
+                except Exception:  # noqa: BLE001
+                    log.exception("initial full market scan failed")
+            elif _cache_state["data"] is None or (ms["open"] and due):
+                _last_cache_refresh["ts"] = time.time()
+                log.info("Refreshing recommendation cache (light)")
                 try:
                     _refresh_cache()
                 except Exception:  # noqa: BLE001
@@ -460,8 +571,8 @@ def _scheduler_loop():
 def start_scheduler():
     thread = threading.Thread(target=_scheduler_loop, daemon=True)
     thread.start()
-    log.info("Rainmaker started. Recommendation cache refreshes every %ds while the market is open; "
-              "daily alert scheduled for 10:30 and 14:30 Vietnam time.", _CACHE_REFRESH_INTERVAL_SEC)
+    log.info("Rainmaker started. Recommendation cache re-prices every %ds while the market is open; "
+              "a full whole-market reassessment runs at 10:30 and 14:30 Vietnam time.", _CACHE_REFRESH_INTERVAL_SEC)
 
 
 # --- static frontend -------------------------------------------------------

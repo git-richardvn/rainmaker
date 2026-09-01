@@ -27,6 +27,7 @@ _CLOSED_TRADES_FILE = os.path.join(_DATA_DIR, "closed_trades.json")
 _SETTINGS_FILE = os.path.join(_DATA_DIR, "settings.json")
 _PREDICTIONS_FILE = os.path.join(_DATA_DIR, "predictions.json")
 _EQUITY_FILE = os.path.join(_DATA_DIR, "equity_history.json")
+_SHORTLIST_FILE = os.path.join(_DATA_DIR, "shortlist.json")
 
 _LIST_FILES = (_PORTFOLIO_FILE, _ALERTS_FILE, _WATCHLIST_FILE, _CLOSED_TRADES_FILE,
                _PREDICTIONS_FILE, _EQUITY_FILE)
@@ -66,6 +67,10 @@ def _sync_from_github_once():
     if remote_settings is not None:
         with open(_SETTINGS_FILE, "w") as fh:
             json.dump(remote_settings, fh, indent=2, default=str)
+    remote_shortlist = gh_sync.pull(os.path.basename(_SHORTLIST_FILE))
+    if remote_shortlist is not None:
+        with open(_SHORTLIST_FILE, "w") as fh:
+            json.dump(remote_shortlist, fh, indent=2, default=str)
 
 
 def _ensure():
@@ -78,6 +83,9 @@ def _ensure():
     if not os.path.exists(_SETTINGS_FILE):
         with open(_SETTINGS_FILE, "w") as fh:
             json.dump(_DEFAULT_SETTINGS, fh)
+    if not os.path.exists(_SHORTLIST_FILE):
+        with open(_SHORTLIST_FILE, "w") as fh:
+            json.dump({"generated_at": None, "cards": []}, fh)
 
 
 def _read(path: str) -> list:
@@ -302,6 +310,25 @@ def remove_watchlist(ticker: str):
     if ticker in wl:
         wl.remove(ticker)
         _write(_WATCHLIST_FILE, wl)
+
+
+# --- whole-market shortlist (twice-daily full re-assessment) ------------
+#
+# The full-market scan is expensive (a whole-market fetch + liquidity
+# ranking + a deep per-ticker read on a capped candidate pool) and only
+# meant to run twice a day, not on every request. Persisting the result
+# means a Render restart between those two runs still has something to
+# show — the last real scan — instead of an empty "Recommended stocks"
+# list until the next scheduled run finally fires.
+
+def save_shortlist(cards: list[dict], generated_at: str) -> dict:
+    data = {"generated_at": generated_at, "cards": cards}
+    _write_obj(_SHORTLIST_FILE, data)
+    return data
+
+
+def load_shortlist() -> dict:
+    return _read_obj(_SHORTLIST_FILE, {"generated_at": None, "cards": []})
 
 
 # --- alert log -----------------------------------------------------------
