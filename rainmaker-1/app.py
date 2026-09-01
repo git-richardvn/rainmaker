@@ -1,11 +1,23 @@
 """
-Rainmaker — personal VN stock dashboard, v0.1
+Rainmaker — VN stock recommendation + watchlist tracker
 
 Run with: uvicorn app:app --host 0.0.0.0 --port 8000
 Then open http://<this-computer's-LAN-IP>:8000 on your iPhone (same WiFi).
 
-This is a working first version, not the finished product described in the
-design doc — see README.md for exactly what's implemented vs. still to come.
+Scope (as of the latest revision): Richard asked to drop the personal
+portfolio / financial-planning half of the app (position tracking, account
+sizing, the 2-week profit target, the loss circuit breaker) and keep only
+two things — a scanner that recommends potential stocks, and a personal
+watchlist of tickers he wants to keep an eye on. This file reflects that.
+
+Speed: the free vnstock data source throttles at 12 calls/60s, so a full
+scan of the ticker universe can legitimately take over a minute. Rather than
+running that scan inline on every page load (which is what made the app
+feel slow, and made popular "double refresh" retries compound into even
+slower ones), a background loop (see the bottom of this file) recomputes the
+scan on a timer and caches the result. GET /api/dashboard just serves that
+cache — normal page loads are near-instant. Only a manual "Refresh" or the
+very first request after a cold boot waits on a real scan.
 """
 from __future__ import annotations
 
@@ -39,47 +51,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 
 # ---------------------------------------------------------------------------
-# Core analysis — shared by the dashboard endpoint and the alert scheduler
+# Core analysis
 # ---------------------------------------------------------------------------
 
-def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Optional[dict] = None,
-                    strict: bool = False) -> Optional[dict]:
-    try:
-        df = ds.get_history(ticker)
-    except Exception as e:  # noqa: BLE001
-        return {
-            "ticker": ticker, "error": True,
-            "message": f"Couldn't fetch price data for {ticker} right now.",
-            "detail": str(e),
-        }
-    # Foreign net-flow, insider trades, upcoming events, and news are all
-    # "nice to have" extra calls — only spend the request budget on them for
-    # tickers actually held, not the whole watchlist scan.
-    foreign_net = ds.get_foreign_net_today(ticker) if held else None
-    reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
-    rec = engine.recommend(reading, held=held, strict=strict)
-    if rec is None:
-        return None
-
-    # --- circuit breaker: pause NEW buys after a bad stretch (never touches exits/holds) ---
-    if not held and rec.action == "buy" and circuit_breaker and circuit_breaker.get("paused"):
-        rec.action, rec.action_label = "watch", "Buys paused — recent losses"
-        rec.why = circuit_breaker["reason"]
-        rec.heads_up = None
-        rec.basis_tags.append("circuit-breaker-paused")
-
-    # --- position-size suggestion for a live buy (greedy-but-disciplined sizing, KB 4.6/13) ---
-    suggested_qty = None
-    risk_amount = None
-    if not held and rec.action == "buy" and rec.entry and rec.stop:
-        settings = store.get_settings()
-        if settings.get("account_size"):
-            per_share_risk = rec.entry - rec.stop
-            if per_share_risk > 0:
-                risk_amount = round(settings["account_size"] * settings["risk_per_trade_pct"] / 100, 0)
-                suggested_qty = int(risk_amount // per_share_risk)
-
-    out = {
+def _build_card(rec, reading) -> dict:
+    return {
         "ticker": rec.ticker,
         "action": rec.action,
         "action_label": rec.action_label,
@@ -96,17 +72,44 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Op
         "bars": reading.bars,
         "conviction": rec.conviction,
         "max_hold_days": rec.max_hold_days,
-        "held_days": rec.held_days,
-        "exit_alert": rec.exit_alert,
-        "exit_reason": rec.exit_reason,
-        "suggested_qty": suggested_qty,
-        "risk_amount": risk_amount,
     }
-    if held:
-        out["insider"] = ds.get_insider_trading(ticker)
-        out["upcoming_event"] = ds.get_upcoming_events(ticker)
-        out["news"] = ds.get_recent_news(ticker)
-    return out
+
+
+def analyze_ticker(ticker: str, strict: bool = False) -> Optional[dict]:
+    """Full read for the recommendation scanner. Returns None when the
+    engine doesn't see anything worth surfacing — the scan never pads its
+    list with a weak setup just to hit a count."""
+    try:
+        df = ds.get_history(ticker)
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ticker": ticker, "error": True,
+            "message": f"Couldn't fetch price data for {ticker} right now.",
+            "detail": str(e),
+        }
+    reading = engine.build_reading(ticker, df)
+    rec = engine.recommend(reading, strict=strict)
+    if rec is None:
+        return None
+    return _build_card(rec, reading)
+
+
+def analyze_watchlist_ticker(ticker: str) -> dict:
+    """Always returns a card for a ticker Richard chose to track himself,
+    even when the engine wouldn't call it a buy right now — this is for
+    keeping an eye on something, not just a signal feed, so it uses the same
+    honest fallback read the chart view uses (engine.explain_reading)."""
+    try:
+        df = ds.get_history(ticker)
+    except Exception as e:  # noqa: BLE001
+        return {
+            "ticker": ticker, "error": True,
+            "message": f"Couldn't fetch price data for {ticker} right now.",
+            "detail": str(e),
+        }
+    reading = engine.build_reading(ticker, df)
+    rec = engine.explain_reading(reading)
+    return _build_card(rec, reading)
 
 
 def market_status() -> dict:
@@ -127,37 +130,16 @@ def market_status() -> dict:
     return {"open": False, "label": "Market closed"}
 
 
-def portfolio_vs_market() -> dict:
-    positions = store.list_positions()
-    if not positions:
-        return {"portfolio_pct": None, "market_pct": None, "since": None,
-                "message": "Add a position to see how you're doing against the market."}
-    total_cost = 0.0
-    total_value = 0.0
-    earliest = min(p["entry_date"] for p in positions)
-    for p in positions:
-        try:
-            df = ds.get_history(p["ticker"])
-            current = float(df["close"].iloc[-1])
-        except Exception:
-            current = p["entry_price"]  # degrade gracefully rather than crash the whole dashboard
-        total_cost += p["entry_price"] * p["qty"]
-        total_value += current * p["qty"]
-    portfolio_pct = round((total_value / total_cost - 1) * 100, 2) if total_cost else None
-    market_pct = ds.get_vnindex_return_pct(earliest)
-    return {"portfolio_pct": portfolio_pct, "market_pct": market_pct, "since": earliest}
-
-
 def _run_prediction_maintenance() -> dict:
-    """Grades any 'buy' predictions whose review window has passed (KB Section
-    14), then checks the resulting correct-rate against Richard's stated 80%
-    bar. If it's fallen below that (with enough graded calls for the number
-    to mean something) and the app isn't already in review mode, this
-    mechanically tightens the confluence requirement for new buys from 2
-    signals to 3 until accuracy recovers — logged as its own alert so
-    Richard can see exactly when and why. This is not a retrain (a
-    rule-based engine has no such thing); it's the same discipline lever
-    already used for high-conviction calls, applied automatically."""
+    """Grades any 'buy' predictions whose review window has passed, then
+    checks the resulting correct-rate against the stated 80% bar. If it's
+    fallen below that (with enough graded calls for the number to mean
+    something) and the app isn't already in review mode, this mechanically
+    tightens the confluence requirement for new buys from 2 signals to 3
+    until accuracy recovers — logged as its own alert. This is not a
+    retrain (a rule-based engine has no such thing); it's the same
+    discipline lever already used for high-conviction calls, applied
+    automatically."""
     for p in store.list_predictions(due_only=True):
         try:
             df = ds.get_history(p["ticker"], days=90)
@@ -165,13 +147,13 @@ def _run_prediction_maintenance() -> dict:
             eval_price = float(future["close"].iloc[0]) if len(future) else float(df["close"].iloc[-1])
             store.grade_prediction(p["id"], eval_price)
         except Exception:  # noqa: BLE001
-            continue  # try again next cycle rather than let one bad fetch break the whole dashboard
+            continue  # try again next cycle rather than let one bad fetch break the whole scan
 
     acc = store.prediction_accuracy()
     review = store.get_review_mode()
     if acc["needs_review"] and not review["active"]:
         reason = (f"Prediction accuracy fell to {acc['overall_accuracy_pct']}% across {acc['overall_evaluated']} "
-                  f"graded calls — below your {acc['accuracy_target_pct']}% bar. Requiring 3 confirming signals "
+                  f"graded calls — below the {acc['accuracy_target_pct']}% bar. Requiring 3 confirming signals "
                   "instead of 2 on new buys until accuracy recovers.")
         store.set_review_mode(True, reason)
         store.log_alert({"label": "Accuracy review triggered", "summary": reason})
@@ -183,214 +165,130 @@ def _run_prediction_maintenance() -> dict:
 
 
 def build_dashboard() -> dict:
-    positions = store.list_positions()
-    held_map = {p["ticker"]: p for p in positions}
-    circuit_breaker = store.trading_circuit_breaker()
+    """One full scan: grades due predictions, re-reads every ticker on
+    Richard's own watchlist (always shown, whatever the signal), then scans
+    the wider universe for fresh recommendations (only the ones actually
+    worth surfacing). This is the slow, throttled part of the app — see the
+    module docstring for why it runs on a background timer instead of
+    inline per request."""
     accuracy = _run_prediction_maintenance()
     review = store.get_review_mode()
 
-    portfolio_cards = []
-    for p in positions:
-        card = analyze_ticker(p["ticker"], held={"entry_price": p["entry_price"], "qty": p["qty"], "entry_date": p.get("entry_date")})
-        if card is None:
-            continue
-        card["position_id"] = p["id"]
-        card["qty"] = p["qty"]
-        card["entry_price"] = p["entry_price"]
-        card["entry_date"] = p["entry_date"]
-        card["unrealized_pl_pct"] = (
-            round((card["price"] / p["entry_price"] - 1) * 100, 2)
-            if not card.get("error") else None
-        )
-        portfolio_cards.append(card)
+    my_tickers = store.list_watchlist()
+    my_watchlist = [analyze_watchlist_ticker(t) for t in my_tickers]
 
-    watch_candidates = list(store.list_watchlist())
+    already_scanned = set(my_tickers)
+    recommended = []
     for t in ds.DEFAULT_UNIVERSE:
-        if t not in held_map and t not in watch_candidates:
-            watch_candidates.append(t)
-
-    watchlist_cards = []
-    for t in watch_candidates:
-        if t in held_map:
+        if t in already_scanned:
             continue
-        card = analyze_ticker(t, held=None, circuit_breaker=circuit_breaker, strict=review["active"])
+        card = analyze_ticker(t, strict=review["active"])
         if card and not card.get("error"):
-            watchlist_cards.append(card)
+            recommended.append(card)
 
     rank_order = {"buy": 0, "watch": 1}
-    watchlist_cards.sort(key=lambda c: (rank_order.get(c["action"], 9), c["confidence"] != "high"))
-    watchlist_cards = watchlist_cards[:10]  # Richard asked for at least 10 recommended tickers at a time
+    recommended.sort(key=lambda c: (rank_order.get(c["action"], 9), c["confidence"] != "high"))
+    recommended = recommended[:10]  # at least/around 10 recommended tickers at a time
 
     # Log a directional prediction for every fresh "buy" call, so its outcome
     # can be graded once its review window passes (store.log_prediction skips
     # tickers that already have an outstanding, ungraded call).
-    for c in watchlist_cards:
+    for c in recommended:
         if c["action"] == "buy" and c.get("entry") and c.get("stop") and c.get("target"):
             store.log_prediction(c["ticker"], c["entry"], c["stop"], c["target"], c.get("basis_tags", []))
-
-    # Equity snapshot for the 2-week target tracker: realized P/L is exact
-    # (from the trade journal), unrealized is live prices on open positions.
-    unrealized = sum((c["price"] - c["entry_price"]) * c["qty"] for c in portfolio_cards if not c.get("error"))
-    store.record_equity_point(store.cumulative_realized_pnl_vnd(), unrealized)
-    period_progress = store.get_period_progress()
-    buy_candidates = [c for c in watchlist_cards if c["action"] == "buy"]
-    strategic_plan = engine.build_strategic_plan(period_progress, buy_candidates, circuit_breaker)
 
     return {
         "generated_at": datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M"),
         "market_status": market_status(),
-        "benchmark": portfolio_vs_market(),
-        "circuit_breaker": circuit_breaker,
-        "settings": store.get_settings(),
         "gh_sync_enabled": gh_sync.enabled(),
-        "portfolio": portfolio_cards,
-        "watchlist": watchlist_cards,
+        "my_watchlist": my_watchlist,
+        "recommended": recommended,
         "alerts": store.list_alerts(today_only=True),
-        "period_progress": period_progress,
-        "strategic_plan": strategic_plan,
         "prediction_accuracy": accuracy,
         "review_mode": review,
     }
 
 
 # ---------------------------------------------------------------------------
-# API
+# Shared cache — one scan feeds every reader, computed on a background timer
 # ---------------------------------------------------------------------------
 
-class NewPosition(BaseModel):
-    ticker: str
-    entry_price: float
-    qty: float
-    entry_date: Optional[str] = None
+_cache_cond = threading.Condition()
+_cache_state = {"building": False, "data": None, "error": None, "ts": 0.0}
 
+
+def _refresh_cache() -> dict:
+    """Runs a fresh scan and updates the shared cache. Never runs two scans
+    at once — an overlapping caller (a manual refresh while the scheduled
+    scan is already running, or two people loading the page at once) just
+    waits for the in-flight scan's result instead of starting a redundant
+    one that would compete for the same rate-limit budget."""
+    with _cache_cond:
+        if _cache_state["building"]:
+            _cache_cond.wait(timeout=280)
+            if _cache_state["data"] is not None and not _cache_state["building"]:
+                return _cache_state["data"]
+            if _cache_state["error"] is not None:
+                raise RuntimeError(_cache_state["error"])
+        _cache_state["building"] = True
+        _cache_state["error"] = None
+
+    try:
+        data = build_dashboard()
+        with _cache_cond:
+            _cache_state["data"] = data
+            _cache_state["ts"] = time.time()
+        return data
+    except Exception as e:  # noqa: BLE001
+        log.exception("scan failed")
+        with _cache_cond:
+            _cache_state["error"] = str(e)
+        raise
+    finally:
+        with _cache_cond:
+            _cache_state["building"] = False
+            _cache_cond.notify_all()
+
+
+# ---------------------------------------------------------------------------
+# API
+# ---------------------------------------------------------------------------
 
 class WatchTicker(BaseModel):
     ticker: str
 
 
-class SettingsUpdate(BaseModel):
-    account_size: Optional[float] = None
-    risk_per_trade_pct: Optional[float] = None
-    monthly_target_pct: Optional[float] = None
-    accuracy_target_pct: Optional[float] = None
-    prediction_eval_days: Optional[int] = None
-
-
-class ClosePosition(BaseModel):
-    exit_price: float
-    exit_date: Optional[str] = None
-
-
-_dashboard_cond = threading.Condition()
-_dashboard_state = {"building": False, "data": None, "error": None, "ts": 0.0}
-
-
 @app.get("/api/dashboard")
 def get_dashboard():
-    """Builds the dashboard, but never runs two full scans at once.
-
-    The free data source is throttled, so a full scan can legitimately take
-    over a minute. If a client gives up and retries (or the frontend's own
-    request timer fires) while the first scan is still running server-side,
-    a naive implementation would kick off a second concurrent scan that
-    competes with the first for the same rate-limit budget -- doubling the
-    wait instead of helping. Here, an overlapping request just waits for the
-    in-flight scan's result instead of starting a redundant one. A result
-    younger than 15s is also reused directly, which covers double-clicks and
-    duplicate tabs.
-    """
-    with _dashboard_cond:
-        if not _dashboard_state["building"] and (time.time() - _dashboard_state["ts"]) < 15 and _dashboard_state["data"] is not None:
-            return _dashboard_state["data"]
-        if _dashboard_state["building"]:
-            _dashboard_cond.wait(timeout=280)
-            if _dashboard_state["error"] is not None:
-                raise HTTPException(status_code=500, detail=_dashboard_state["error"])
-            if _dashboard_state["data"] is not None:
-                return _dashboard_state["data"]
-            # Fell through (timed out waiting, or the other build hasn't posted yet) -- fall
-            # back to building it ourselves rather than hanging forever.
-        _dashboard_state["building"] = True
-        _dashboard_state["error"] = None
-
+    """Serves the last background-computed scan instantly — see the module
+    docstring. Only blocks on a real scan when the cache is still empty
+    (a cold boot that the background loop hasn't finished warming up yet)."""
+    if _cache_state["data"] is not None:
+        return _cache_state["data"]
     try:
-        data = build_dashboard()
-        with _dashboard_cond:
-            _dashboard_state["data"] = data
-            _dashboard_state["ts"] = time.time()
-        return data
+        return _refresh_cache()
     except Exception as e:  # noqa: BLE001
-        log.exception("dashboard build failed")
-        with _dashboard_cond:
-            _dashboard_state["error"] = str(e)
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        with _dashboard_cond:
-            _dashboard_state["building"] = False
-            _dashboard_cond.notify_all()
 
 
-@app.post("/api/portfolio")
-def post_position(pos: NewPosition):
-    return store.add_position(pos.ticker, pos.entry_price, pos.qty, pos.entry_date)
-
-
-@app.delete("/api/portfolio/{position_id}")
-def delete_position(position_id: str):
-    """Removes a position WITHOUT logging a trade — for correcting a mistaken
-    entry, not for closing a real trade. Use /close for an actual exit, since
-    that's what feeds the trade journal and the circuit breaker."""
-    ok = store.remove_position(position_id)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Position not found")
-    return {"ok": True}
-
-
-@app.post("/api/portfolio/{position_id}/close")
-def close_position(position_id: str, body: ClosePosition):
-    """Closes a real trade at the given exit price and logs it to the trade
-    journal — this is what powers the circuit breaker (store.trading_circuit_breaker)
-    and any future realized win-rate reporting (KB Section 13)."""
-    trade = store.close_position(position_id, body.exit_price, body.exit_date)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="Position not found")
-    return trade
-
-
-@app.get("/api/trades")
-def get_trades():
-    return {"trades": store.list_closed_trades(), "circuit_breaker": store.trading_circuit_breaker()}
-
-
-@app.get("/api/settings")
-def get_settings():
-    return store.get_settings()
-
-
-@app.post("/api/settings")
-def post_settings(s: SettingsUpdate):
-    return store.save_settings(s.account_size, s.risk_per_trade_pct, s.monthly_target_pct,
-                                s.accuracy_target_pct, s.prediction_eval_days)
-
-
-@app.get("/api/target")
-def get_target():
-    """The 2-week profit-target tracker on its own, without re-running the
-    full (throttled, slow) watchlist scan — /api/dashboard already returns
-    the same period_progress/strategic_plan alongside live buy candidates on
-    every load; this endpoint is for checking the number by itself."""
-    period = store.get_period_progress()
-    circuit_breaker = store.trading_circuit_breaker()
-    plan = engine.build_strategic_plan(period, [], circuit_breaker)
-    return {"period_progress": period, "strategic_plan": plan}
+@app.post("/api/refresh")
+def refresh_now():
+    """Manual override — forces a fresh scan right now (rather than waiting
+    for the next scheduled one) and sends the same alert a scheduled cycle
+    would. Can take up to ~1-2 minutes since it's a real throttled scan; the
+    shared cache lock means clicking it twice doesn't start two scans."""
+    try:
+        return run_alert_cycle(manual=True)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/predictions")
 def get_predictions():
-    """Every buy call the app has made, whether it's been graded yet, and the
-    resulting correct-rate — overall and per-ticker — against Richard's
-    stated 80% bar (KB Section 14). This is the honest, measured answer to
-    'is this app actually working', not a guessed number."""
+    """Every buy call the scanner has made, whether it's been graded yet,
+    and the resulting correct-rate — overall and per-ticker — against the
+    stated 80% bar. This is the honest, measured answer to 'is this app's
+    advice actually good', not a guessed number."""
     return {
         "predictions": store.list_predictions(),
         "accuracy": store.prediction_accuracy(),
@@ -415,22 +313,17 @@ def get_chart(ticker: str):
     """Everything needed to draw a professional-style chart for one ticker:
     candles, moving averages, a trendline when the data supports one,
     liquidity/support-resistance levels, and the same honest read (why,
-    entry/stop/target) the dashboard cards use — never hidden here even for
-    tickers Rainmaker wouldn't suggest buying, since this is for Richard to
-    study and discuss, not just a buy signal."""
+    entry/stop/target) the cards use — never hidden here even for tickers
+    Rainmaker wouldn't suggest buying, since this view is for studying a
+    ticker, not just a buy signal."""
     ticker = ticker.upper().strip()
     try:
         df = ds.get_history(ticker)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Couldn't fetch chart data for {ticker}: {e}")
 
-    positions = store.list_positions()
-    held_pos = next((p for p in positions if p["ticker"] == ticker), None)
-    held = {"entry_price": held_pos["entry_price"], "qty": held_pos["qty"], "entry_date": held_pos.get("entry_date")} if held_pos else None
-    foreign_net = ds.get_foreign_net_today(ticker) if held else None
-
-    reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
-    rec = engine.explain_reading(reading, held=held)
+    reading = engine.build_reading(ticker, df)
+    rec = engine.explain_reading(reading)
     chart = engine.build_chart_payload(df, reading)
 
     return {
@@ -449,20 +342,16 @@ def get_chart(ticker: str):
         "reward_risk": rec.reward_risk,
         "conviction": rec.conviction,
         "max_hold_days": rec.max_hold_days,
-        "held_days": rec.held_days,
-        "exit_alert": rec.exit_alert,
-        "exit_reason": rec.exit_reason,
-        "held": held,
         **chart,
     }
 
 
 @app.get("/api/backtest/{ticker}")
 def get_backtest(ticker: str):
-    """Runs the engine's current rules (KB Section 13's answer to 'does this
-    actually work') against this ticker's available price history — a
-    measured, honest substitute for a guessed win rate. See engine.backtest's
-    docstring for the simplifications this walk-forward simulation makes."""
+    """Runs the engine's current rules against this ticker's available price
+    history — a measured, honest substitute for a guessed win rate. See
+    engine.backtest's docstring for the simplifications this walk-forward
+    simulation makes."""
     ticker = ticker.upper().strip()
     try:
         df = ds.get_history(ticker, days=1500)  # ask for as much history as the source will give
@@ -473,25 +362,20 @@ def get_backtest(ticker: str):
 
 @app.get("/api/backup")
 def get_backup():
-    """Download everything as one JSON file. On free hosting, local storage
-    resets on redeploy — export this occasionally, and use /api/restore to
-    bring it back after one."""
-    return {
-        "positions": store.list_positions(),
-        "watchlist": store.list_watchlist(),
-    }
+    """Download your watchlist as JSON. On free hosting, local storage can
+    reset on a redeploy or restart — GitHub sync (see gh_sync.py) already
+    covers this automatically when configured; this is a manual fallback."""
+    return {"watchlist": store.list_watchlist()}
 
 
 class BackupData(BaseModel):
-    positions: list = []
     watchlist: list = []
 
 
 @app.post("/api/restore")
 def post_restore(data: BackupData):
-    store._write(store._PORTFOLIO_FILE, data.positions)
     store._write(store._WATCHLIST_FILE, data.watchlist)
-    return {"ok": True, "positions_restored": len(data.positions)}
+    return {"ok": True, "watchlist_restored": len(data.watchlist)}
 
 
 @app.get("/healthz")
@@ -500,60 +384,28 @@ def healthz():
     return {"ok": True, "time": datetime.now(VN_TZ).isoformat()}
 
 
-@app.post("/api/refresh")
-def refresh_now():
-    """Manual trigger — same thing the 10:30/14:30 scheduler does, runnable anytime for testing."""
-    return run_alert_cycle(manual=True)
-
-
 def run_alert_cycle(manual: bool = False) -> dict:
-    dash = build_dashboard()
+    dash = _refresh_cache()
     label = "Manual check" if manual else "Scheduled check"
 
-    # --- exit alerts: unambiguous "act now" cases (stop hit / target hit / time-stop) ---
-    # Sent as their own urgent push, separate from routine sell/trim/new-idea notes,
-    # per Richard's explicit ask: "automatically send alert to me when I need to exit
-    # any ticker." These never get buried in a longer list.
-    exit_cards = [c for c in dash["portfolio"] if c.get("exit_alert")]
-    if exit_cards:
-        exit_lines = [f"🚨 {c['ticker']}: {c['action_label']} — {c.get('exit_reason') or c['why']}"
-                      for c in exit_cards]
-        notify.send(
-            title="Rainmaker — EXIT ALERT",
-            message="\n".join(exit_lines[:5]),
-            priority="urgent",
-        )
-        store.log_alert({"label": f"{label} — EXIT ALERT",
-                          "summary": " / ".join(f"{c['ticker']}: {c['action_label']}" for c in exit_cards)})
-
-    # --- routine notes: everything else worth a look, but not act-now urgent ---
-    needs_attention = [c for c in dash["portfolio"] if c["action"] in ("sell", "trim") and not c.get("exit_alert")]
-    new_ideas = [c for c in dash["watchlist"] if c["action"] == "buy"]
-
-    lines = []
-    for c in needs_attention:
-        lines.append(f"{c['ticker']}: {c['action_label']} — {c['why']}")
-    for c in new_ideas:
-        lines.append(f"{c['ticker']} (new): {c['action_label']} — {c['why']}")
-
-    if lines:
-        store.log_alert({"label": label, "summary": " / ".join(f"{c['ticker']}: {c['action_label']}"
-                                                                  for c in needs_attention + new_ideas)})
-        notify.send(
-            title="Rainmaker",
-            message="\n".join(lines[:5]),
-        )
-    elif not exit_cards:
-        store.log_alert({"label": label, "summary": "No action needed — everything holding steady."})
+    new_ideas = [c for c in dash["recommended"] if c["action"] == "buy"]
+    if new_ideas:
+        lines = [f"{c['ticker']} (new): {c['action_label']} — {c['why']}" for c in new_ideas]
+        store.log_alert({"label": label, "summary": " / ".join(f"{c['ticker']}: {c['action_label']}" for c in new_ideas)})
+        notify.send(title="Rainmaker", message="\n".join(lines[:5]))
+    else:
+        store.log_alert({"label": label, "summary": "No new buy ideas right now."})
     return dash
 
 
 # ---------------------------------------------------------------------------
-# Background scheduler — fires the two daily alerts even with no one watching
+# Background scheduler — keeps the scan cache warm and fires the daily alert
 # ---------------------------------------------------------------------------
 
 _ALERT_TIMES = [(10, 30), (14, 30)]
 _fired_today: set[str] = set()
+_CACHE_REFRESH_INTERVAL_SEC = 15 * 60  # how often to re-scan while the market is open
+_last_cache_refresh = {"ts": 0.0}
 
 
 def _scheduler_loop():
@@ -570,6 +422,20 @@ def _scheduler_loop():
                         run_alert_cycle(manual=False)
             if len(_fired_today) > 20:
                 _fired_today.clear()
+
+            # Keep the recommendation cache warm so page loads never block on
+            # a live scan: refresh once at cold boot, then periodically while
+            # the market is open (prices don't move while it's closed, so
+            # there's no reason to keep re-hitting the rate-limited source).
+            ms = market_status()
+            due = (time.time() - _last_cache_refresh["ts"]) >= _CACHE_REFRESH_INTERVAL_SEC
+            if _cache_state["data"] is None or (ms["open"] and due):
+                _last_cache_refresh["ts"] = time.time()
+                log.info("Refreshing recommendation cache")
+                try:
+                    _refresh_cache()
+                except Exception:  # noqa: BLE001
+                    pass  # already logged inside _refresh_cache; keep the loop alive
         except Exception:  # noqa: BLE001
             log.exception("scheduler tick failed")
         time.sleep(30)
@@ -579,7 +445,8 @@ def _scheduler_loop():
 def start_scheduler():
     thread = threading.Thread(target=_scheduler_loop, daemon=True)
     thread.start()
-    log.info("Rainmaker started. Daily alerts scheduled for 10:30 and 14:30 Vietnam time.")
+    log.info("Rainmaker started. Recommendation cache refreshes every %ds while the market is open; "
+              "daily alert scheduled for 10:30 and 14:30 Vietnam time.", _CACHE_REFRESH_INTERVAL_SEC)
 
 
 # --- static frontend -------------------------------------------------------
