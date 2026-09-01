@@ -283,7 +283,7 @@ async function removePosition(id){
 
 function heroHTML(bench){
   if (bench.portfolio_pct == null){
-    return `<div style="color:var(--text-muted); font-size:14px;">${bench.message || 'Add a position to see how you\\'re doing against the market.'}</div>`;
+    return `<div style="color:var(--text-muted); font-size:14px;">${bench.message || "Add a position to see how you're doing against the market."}</div>`;
   }
   const beating = bench.portfolio_pct >= bench.market_pct;
   const gap = Math.abs(bench.portfolio_pct - (bench.market_pct ?? bench.portfolio_pct)).toFixed(1);
