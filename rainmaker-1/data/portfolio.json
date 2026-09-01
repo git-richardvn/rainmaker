@@ -12,5 +12,12 @@
     "entry_price": 13800.0,
     "qty": 44000.0,
     "entry_date": "2026-08-24"
+  },
+  {
+    "id": "7ac5a721",
+    "ticker": "HPG",
+    "entry_price": 27000.0,
+    "qty": 100.0,
+    "entry_date": "2026-09-01"
   }
 ]
