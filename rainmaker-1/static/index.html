@@ -194,6 +194,18 @@
   .chart-legend i{ display:inline-block; width:10px; height:3px; border-radius:2px; }
   .chart-legend i.dot{ width:8px; height:8px; border-radius:50%; }
   .chart-note{ font-size:11px; color:var(--text-faint); margin-top:10px; line-height:1.5; }
+
+  .cb-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
+    color:var(--watch); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12.5px; }
+
+  .extra-line{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:8px; padding:6px 10px; }
+  .extra-line b{ color:var(--text-faint); font-weight:600; }
+  .size-hint{ font-size:11px; color:var(--violet); background:rgba(157,123,255,0.1); border-radius:8px; padding:5px 10px; display:inline-block; }
+  .close-link{ color:var(--gain); text-decoration:underline; cursor:pointer; font-size:11px; background:none; border:none; padding:0; margin-right:12px; }
+
+  .backtest-btn{ background:none; border:1px solid var(--hairline); color:var(--text-muted); border-radius:999px; padding:5px 12px; font-size:11px; font-weight:600; cursor:pointer; margin-top:10px; }
+  .backtest-result{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:10px; padding:10px 12px; margin-top:8px; line-height:1.6; }
+  .backtest-result b{ color:var(--text); }
 </style>
 </head>
 <body>
@@ -208,6 +220,7 @@
     </div>
     <div style="display:flex; gap:10px; align-items:center;">
       <div class="status-pill" id="statusPill"><span class="live off">Loading…</span></div>
+      <button class="refresh-btn" id="openSettings" title="Position sizing settings">⚙︎</button>
       <button class="refresh-btn" id="refreshBtn">Refresh</button>
     </div>
   </div>
@@ -221,6 +234,8 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
     <span>Rainmaker checks your portfolio automatically at 10:30 and 14:30 every trading day, and any time you tap Refresh.</span>
   </div>
+
+  <div class="cb-banner" id="cbBanner" hidden></div>
 
   <div class="panel">
     <div class="panel-head">
@@ -254,6 +269,20 @@
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelAdd">Cancel</button>
       <button class="btn-save" id="saveAdd">Add</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="settingsOverlay" hidden>
+  <div class="modal">
+    <h3>Position sizing</h3>
+    <div class="field"><label>Account size (₫)</label><input id="sAccountSize" type="number" inputmode="decimal" placeholder="e.g. 500000000"></div>
+    <div class="field"><label>Risk per trade (%)</label><input id="sRiskPct" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 1.5"></div>
+    <div style="font-size:11px; color:var(--text-faint); margin-bottom:6px;">Used to suggest how many shares to buy on new setups, sized so a stop-loss hit only costs this % of your account — never entered as a live order for you.</div>
+    <div class="err" id="sErr" hidden></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelSettings">Cancel</button>
+      <button class="btn-save" id="saveSettings">Save</button>
     </div>
   </div>
 </div>
@@ -298,6 +327,9 @@ function cardHTML(c, held){
       ${c.held_days!=null ? `<span>Held <b>${c.held_days}d</b> of ${c.max_hold_days}d limit</span>`:''}
     </div>` : '';
   const exitBanner = c.exit_alert ? `<div class="exit-banner">⚠ Exit now — ${c.exit_reason || c.action_label}</div>` : '';
+  const extras = [c.insider, c.upcoming_event, c.news].filter(Boolean);
+  const extraHTML = extras.length ? `<div style="display:flex; flex-direction:column; gap:5px;">${extras.map(x=>`<div class="extra-line">${x}</div>`).join('')}</div>` : '';
+  const sizeHint = (!held && c.action === 'buy' && c.suggested_qty) ? `<div class="size-hint">Suggested size: ~${c.suggested_qty.toLocaleString('en-US')} shares (risking ~${fmtVND(c.risk_amount)})</div>` : '';
   return `
     <div class="card ${cls}${c.exit_alert ? ' exit-alert' : ''}" onclick="openChart('${c.ticker}')">
       ${exitBanner}
@@ -312,14 +344,32 @@ function cardHTML(c, held){
       <div class="why">${c.why}</div>
       ${c.heads_up ? `<div class="heads-up">${c.heads_up}</div>` : ''}
       ${numbers}
+      ${sizeHint}
       ${holdMeta}
-      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<button class="remove-link" onclick="event.stopPropagation(); removePosition('${c.position_id}')">Remove</button>`:''}</div>
+      ${extraHTML}
+      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<span onclick="event.stopPropagation();"><button class="close-link" onclick="closePosition('${c.position_id}', ${c.price})">Close</button><button class="remove-link" onclick="removePosition('${c.position_id}')">Remove</button></span>`:''}</div>
     </div>`;
 }
 
 async function removePosition(id){
-  if (!confirm('Remove this position from your portfolio?')) return;
+  if (!confirm('Remove this position from your portfolio? (This does NOT log a trade — use Close for a real exit.)')) return;
   await fetch('/api/portfolio/' + id, { method: 'DELETE' });
+  load();
+}
+
+async function closePosition(id, lastPrice){
+  const input = prompt('Exit price (₫ per share)?', Math.round(lastPrice));
+  if (input == null) return;
+  const exit_price = parseFloat(input);
+  if (!exit_price || exit_price <= 0){ alert('Enter a valid price.'); return; }
+  const r = await fetch(`/api/portfolio/${id}/close`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ exit_price })
+  });
+  if (r.ok){
+    const t = await r.json();
+    alert(`Closed ${t.ticker}: ${t.realized_pct > 0 ? '+' : ''}${t.realized_pct}% over ${t.held_days} days.`);
+  }
   load();
 }
 
@@ -349,6 +399,16 @@ async function load(){
 
   document.getElementById('heroBody').innerHTML = heroHTML(d.benchmark);
 
+  const cbBanner = document.getElementById('cbBanner');
+  if (d.circuit_breaker && d.circuit_breaker.paused){
+    cbBanner.hidden = false;
+    cbBanner.innerHTML = `⏸ <span><b>New buys paused.</b> ${d.circuit_breaker.reason}</span>`;
+  } else {
+    cbBanner.hidden = true;
+  }
+
+  window._settings = d.settings || {};
+
   const pf = d.portfolio;
   const exitCount = pf.filter(c=>c.exit_alert).length;
   document.getElementById('portfolioCount').textContent =
@@ -359,7 +419,7 @@ async function load(){
 
   const wl = d.watchlist;
   document.getElementById('watchbar').innerHTML = wl.length
-    ? wl.map(c => `<div class="watch-chip" onclick="openChart('${c.ticker}')"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}</span></div>`).join('')
+    ? wl.map(c => `<div class="watch-chip" onclick="openChart('${c.ticker}')"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}${c.action==='buy'&&c.suggested_qty ? ` · size ~${c.suggested_qty.toLocaleString('en-US')}` : ''}</span></div>`).join('')
     : `<div class="empty">Nothing standing out right now.</div>`;
 
   const alerts = d.alerts;
@@ -396,6 +456,29 @@ document.getElementById('saveAdd').onclick = async () => {
   document.getElementById('fPrice').value = '';
   document.getElementById('fQty').value = '';
   document.getElementById('fDate').value = '';
+  load();
+};
+
+const settingsOverlay = document.getElementById('settingsOverlay');
+document.getElementById('openSettings').onclick = () => {
+  document.getElementById('sAccountSize').value = window._settings?.account_size ?? '';
+  document.getElementById('sRiskPct').value = window._settings?.risk_per_trade_pct ?? 1.5;
+  document.getElementById('sErr').hidden = true;
+  settingsOverlay.hidden = false;
+};
+document.getElementById('cancelSettings').onclick = () => { settingsOverlay.hidden = true; };
+document.getElementById('saveSettings').onclick = async () => {
+  const account_size = parseFloat(document.getElementById('sAccountSize').value) || null;
+  const risk_per_trade_pct = parseFloat(document.getElementById('sRiskPct').value) || null;
+  const err = document.getElementById('sErr');
+  if (risk_per_trade_pct != null && (risk_per_trade_pct <= 0 || risk_per_trade_pct > 10)){
+    err.textContent = 'Risk per trade should be a small number, like 1-3%.'; err.hidden = false; return;
+  }
+  await fetch('/api/settings', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ account_size, risk_per_trade_pct })
+  });
+  settingsOverlay.hidden = true;
   load();
 };
 
@@ -459,7 +542,10 @@ function renderChart(d){
       <span><i style="background:var(--gain); opacity:.6"></i>Take profit</span>
     </div>
     <div class="chart-note">Support/resistance lines are recent swing highs and lows — a "Liquidity pool" label means price touched that level more than once, which is where professional traders expect stops and orders to cluster. Bars: ${d.bars}.</div>
+    <button class="backtest-btn" id="runBacktestBtn">Backtest this ticker's rules</button>
+    <div id="backtestResult"></div>
   `;
+  document.getElementById('runBacktestBtn').onclick = () => runBacktest(d.ticker);
 
   destroyChart();
   if (typeof LightweightCharts === 'undefined'){
@@ -537,6 +623,30 @@ function renderChart(d){
   }
 
   chart.timeScale().fitContent();
+}
+
+async function runBacktest(ticker){
+  const btn = document.getElementById('runBacktestBtn');
+  const out = document.getElementById('backtestResult');
+  btn.disabled = true; btn.textContent = 'Running…';
+  try {
+    const res = await fetch('/api/backtest/' + encodeURIComponent(ticker));
+    const b = await res.json();
+    if (!b.trades){
+      out.innerHTML = `<div class="backtest-result">${b.note || 'No qualifying signals in this history.'}</div>`;
+    } else {
+      out.innerHTML = `<div class="backtest-result">
+        Over this ticker's available history: <b>${b.trades} trade${b.trades>1?'s':''}</b> would have fired under today's rules,
+        winning <b>${b.win_rate_pct}%</b> of the time, averaging <b>${fmtPct(b.avg_return_pct_after_fees)}</b> per trade after fees
+        over ~${b.avg_hold_days} days held, compounding to <b>${fmtPct(b.compounded_return_pct)}</b> total if taken back-to-back.
+        <div style="margin-top:6px; color:var(--text-faint); font-size:10.5px;">${(b.caveats||[]).join(' ')}</div>
+      </div>`;
+    }
+  } catch (e) {
+    out.innerHTML = `<div class="backtest-result">Couldn't run the backtest right now.</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Backtest this ticker\'s rules';
+  }
 }
 
 load();
