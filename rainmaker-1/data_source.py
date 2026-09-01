@@ -20,7 +20,7 @@ log = logging.getLogger("rainmaker.data")
 
 _HISTORY_CACHE: dict[str, tuple[float, pd.DataFrame]] = {}
 _FOREIGN_CACHE: dict[str, tuple[float, Optional[float]]] = {}
-_CACHE_TTL_SECONDS = 300  # don't hammer the free source; a 5-minute-old bar is fine for this use case
+_CACHE_TTL_SECONDS = 600  # don't hammer the free source; a 10-minute-old bar is fine for this use case
 
 # vnstock's free/guest tier caps requests at 20/minute and kills the whole
 # process with SystemExit when that's exceeded. Stay well under that with a
@@ -56,9 +56,15 @@ VNINDEX_SYMBOL = "VNINDEX"
 # _throttle() still protects the free vnstock rate limit either way.
 DEFAULT_UNIVERSE = [
     "VNM", "HPG", "FPT", "VIC", "MWG", "SSI", "VCB", "MSN", "VHM", "GAS",
-    "VIB", "VPB", "TCB", "MBB", "CTG", "BID", "ACB", "STB", "TPB", "SHB",
-    "VRE", "PLX", "POW", "GVR", "SAB", "VJC", "PNJ", "DGC", "NKG", "HSG",
+    "VPB", "TCB", "MBB", "CTG", "ACB", "VRE", "PLX", "VJC",
 ]
+# Capped at 18, not the 30 first tried: vnstock's free-tier throttle (12
+# calls/min, itself already under vnstock's hard 20/min) means a full cold
+# scan takes roughly ceil(tickers/12)*60 seconds — 18 tickers is the largest
+# universe that reliably finishes within about a minute and a half, so it
+# doesn't pile up against the frontend's own refresh interval. A bigger scan
+# is possible but belongs in the twice-daily background scheduler, not on
+# every dashboard page load — see deployment-status.md.
 
 _INSIDER_CACHE: dict[str, tuple[float, Optional[str]]] = {}
 _EVENT_CACHE: dict[str, tuple[float, Optional[str]]] = {}
