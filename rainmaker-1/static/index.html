@@ -101,19 +101,12 @@
   .panel-head .count{ font-size:11px; color:var(--text-faint); }
   .add-btn{ background:none; border:1px solid var(--hairline); color:var(--violet); border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; }
 
-  .card{ padding:18px 20px; border-bottom:1px solid var(--hairline-soft); display:flex; flex-direction:column; gap:10px; position:relative; }
+  .card{ padding:18px 20px; border-bottom:1px solid var(--hairline-soft); display:flex; flex-direction:column; gap:10px; position:relative; cursor:pointer; }
   .card:last-child{ border-bottom:none; }
   .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
   .card.buy::before{ background:var(--gain); box-shadow:0 0 12px 1px var(--gain-soft); }
   .card.sell::before{ background:var(--loss); box-shadow:0 0 12px 1px var(--loss-soft); }
   .card.trim::before, .card.hold::before, .card.watch::before{ background:var(--watch); box-shadow:0 0 12px 1px var(--watch-soft); }
-  .card.exit-alert{ background:rgba(255,109,130,0.07); }
-  .card.exit-alert::before{ width:4px; background:var(--loss); box-shadow:0 0 16px 2px var(--loss-soft); }
-  .exit-banner{ display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:700; letter-spacing:0.03em;
-    text-transform:uppercase; color:var(--loss); background:var(--loss-soft); border:1px solid rgba(255,109,130,0.35);
-    border-radius:8px; padding:6px 11px; }
-  .hold-meta{ font-size:10.5px; color:var(--text-faint); display:flex; gap:10px; flex-wrap:wrap; }
-  .hold-meta b{ color:var(--text-muted); font-weight:600; }
 
   .card-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .ticker-block{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
@@ -142,12 +135,6 @@
   .empty{ padding:26px 20px; color:var(--text-faint); font-size:13px; text-align:center; }
 
   .section-label{ font-size:11.5px; font-weight:600; color:var(--text-faint); margin:0 0 10px 4px; }
-  .watchbar{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
-  .watch-chip{ display:flex; align-items:center; gap:9px; padding:10px 13px; border:1px solid var(--hairline); border-radius:14px;
-    background:var(--glass); backdrop-filter:blur(14px); font-size:12px; box-shadow:var(--shadow); }
-  .watch-chip .dot{ width:7px; height:7px; border-radius:50%; flex:none; background:var(--cyan); box-shadow:0 0 8px 1px rgba(51,228,224,0.6); }
-  .watch-chip .price{ color:var(--text-faint); }
-  .watch-chip .reason{ color:var(--text-muted); }
 
   .alertlog{ background:var(--glass-2); border:1px solid var(--hairline-soft); border-radius:16px; margin-bottom:22px; font-size:12px; }
   .alertlog summary{ padding:12px 16px; cursor:pointer; color:var(--text-muted); font-weight:600; list-style:none; display:flex; align-items:center; gap:8px; }
@@ -161,7 +148,7 @@
   .footer-line{ text-align:center; font-size:12px; color:var(--text-faint); padding-top:6px; }
   .footer-line b{ background:var(--aurora); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:600; }
 
-  /* add-position modal */
+  /* add-ticker modal */
   .overlay{ position:fixed; inset:0; background:rgba(3,3,8,0.7); backdrop-filter:blur(4px); z-index:10;
     display:flex; align-items:flex-end; justify-content:center; }
   @media (min-width:640px){ .overlay{ align-items:center; } }
@@ -178,9 +165,6 @@
   .btn-save{ background:var(--aurora); color:#0a0a14; }
   .err{ color:var(--loss); font-size:12px; margin-top:6px; }
 
-  .card{ cursor:pointer; }
-  .watch-chip{ cursor:pointer; }
-
   /* chart modal */
   .chart-modal{ max-width:760px; max-height:92vh; overflow-y:auto; }
   .modal-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
@@ -195,26 +179,14 @@
   .chart-legend i.dot{ width:8px; height:8px; border-radius:50%; }
   .chart-note{ font-size:11px; color:var(--text-faint); margin-top:10px; line-height:1.5; }
 
-  .cb-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
-    color:var(--watch); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12.5px; }
-  .cb-banner[hidden]{ display:none; }
   .gh-banner{ display:flex; align-items:center; gap:9px; background:var(--loss-soft); border:1px solid rgba(255,109,130,0.35);
     color:var(--loss); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12px; line-height:1.5; }
   .gh-banner[hidden]{ display:none; }
   .gh-banner a{ color:inherit; }
   .review-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
     color:var(--watch); border-radius:12px; padding:9px 14px; margin-top:10px; font-size:11.5px; line-height:1.5; }
-  .target-row{ display:flex; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:10px; }
-  .target-row .num{ font-family:'Sora',sans-serif; font-weight:700; }
-  .plan-line{ font-size:13px; line-height:1.55; color:var(--text); margin-bottom:8px; }
-  .plan-line:last-child{ margin-bottom:0; }
   .acc-row{ display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-top:1px solid var(--hairline-soft); font-size:12px; }
   .acc-row .tk{ font-family:'IBM Plex Mono',monospace; color:var(--text-muted); }
-
-  .extra-line{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:8px; padding:6px 10px; }
-  .extra-line b{ color:var(--text-faint); font-weight:600; }
-  .size-hint{ font-size:11px; color:var(--violet); background:rgba(157,123,255,0.1); border-radius:8px; padding:5px 10px; display:inline-block; }
-  .close-link{ color:var(--gain); text-decoration:underline; cursor:pointer; font-size:11px; background:none; border:none; padding:0; margin-right:12px; }
 
   .backtest-btn{ background:none; border:1px solid var(--hairline); color:var(--text-muted); border-radius:999px; padding:5px 12px; font-size:11px; font-weight:600; cursor:pointer; margin-top:10px; }
   .backtest-result{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:10px; padding:10px 12px; margin-top:8px; line-height:1.6; }
@@ -229,50 +201,45 @@
   <div class="topbar">
     <div class="brand">
       <span class="orb"></span>
-      <div><h1>Rainmaker</h1><div class="sub">Your money, working — plain and simple</div></div>
+      <div><h1>Rainmaker</h1><div class="sub">Stock recommendations & your watchlist</div></div>
     </div>
     <div style="display:flex; gap:10px; align-items:center;">
       <div class="status-pill" id="statusPill"><span class="live off">Loading…</span></div>
-      <button class="refresh-btn" id="openSettings" title="Position sizing settings">⚙︎</button>
       <button class="refresh-btn" id="refreshBtn">Refresh</button>
     </div>
   </div>
 
   <div class="hero">
-    <div class="hero-label">The only number that matters</div>
+    <div class="hero-label">Right now</div>
     <div id="heroBody">Loading…</div>
   </div>
 
   <div class="context-strip">
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
-    <span>Rainmaker checks your portfolio automatically at 10:30 and 14:30 every trading day, and any time you tap Refresh.</span>
+    <span>Rainmaker rescans the market every 15 minutes while it's open, and any time you tap Refresh — page loads read the last scan instantly.</span>
   </div>
 
-  <div class="cb-banner" id="cbBanner" hidden></div>
   <div class="gh-banner" id="ghBanner" hidden></div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>2-week profit target</h2>
-      <span class="count" id="targetPeriodLabel">—</span>
+      <h2>Recommended stocks</h2>
+      <span class="count" id="recommendedCount">—</span>
     </div>
-    <div id="targetBody" style="padding:18px 20px;"><div class="empty">Loading…</div></div>
+    <div id="recommendedList"><div class="empty">Loading…</div></div>
   </div>
 
   <div class="panel">
     <div class="panel-head">
-      <h2>Your portfolio</h2>
-      <span class="count" id="portfolioCount">—</span>
-      <button class="add-btn" id="openAdd">+ Add position</button>
+      <h2>Your watchlist</h2>
+      <span class="count" id="watchlistCount">—</span>
+      <button class="add-btn" id="openAdd">+ Add ticker</button>
     </div>
-    <div id="portfolioList"><div class="empty">Loading…</div></div>
+    <div id="watchlistList"><div class="empty">Loading…</div></div>
   </div>
 
-  <div class="section-label">Worth a look outside your portfolio</div>
-  <div class="watchbar" id="watchbar"><div class="empty">Loading…</div></div>
-
   <details class="alertlog" id="accuracyPanel">
-    <summary>App prediction accuracy</summary>
+    <summary>Recommendation accuracy</summary>
     <div id="accuracyBody"></div>
   </details>
 
@@ -281,36 +248,18 @@
     <div id="alertRows"></div>
   </details>
 
-  <div class="footer-line">Everything here exists for <b>one job</b> — growing your money faster than the market.</div>
-  <div class="footer-line" style="margin-top:8px;"><a href="/api/backup" target="_blank" style="color:var(--text-faint);">Back up my portfolio data</a></div>
+  <div class="footer-line">Everything here exists for <b>one job</b> — surfacing good setups before you'd find them yourself.</div>
+  <div class="footer-line" style="margin-top:8px;"><a href="/api/backup" target="_blank" style="color:var(--text-faint);">Back up my watchlist</a></div>
 </div>
 
 <div class="overlay" id="overlay" hidden>
   <div class="modal">
-    <h3>Add a position</h3>
+    <h3>Add to watchlist</h3>
     <div class="field"><label>Ticker (e.g. HPG)</label><input id="fTicker" maxlength="6" autocapitalize="characters"></div>
-    <div class="field"><label>Price you paid (₫ per share)</label><input id="fPrice" type="number" inputmode="decimal"></div>
-    <div class="field"><label>Number of shares</label><input id="fQty" type="number" inputmode="numeric"></div>
-    <div class="field"><label>Date bought</label><input id="fDate" type="date"></div>
     <div class="err" id="fErr" hidden></div>
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelAdd">Cancel</button>
       <button class="btn-save" id="saveAdd">Add</button>
-    </div>
-  </div>
-</div>
-
-<div class="overlay" id="settingsOverlay" hidden>
-  <div class="modal">
-    <h3>Position sizing</h3>
-    <div class="field"><label>Account size (₫)</label><input id="sAccountSize" type="number" inputmode="decimal" placeholder="e.g. 500000000"></div>
-    <div class="field"><label>Risk per trade (%)</label><input id="sRiskPct" type="number" inputmode="decimal" step="0.1" placeholder="e.g. 1.5"></div>
-    <div class="field"><label>Monthly profit target (%)</label><input id="sMonthlyTarget" type="number" inputmode="decimal" step="0.5" placeholder="e.g. 15"></div>
-    <div style="font-size:11px; color:var(--text-faint); margin-bottom:6px;">Account size + risk % size new buy suggestions so a stop-loss hit only costs that % of your account. The monthly target splits into a 2-week goal shown above your portfolio — never entered as a live order for you.</div>
-    <div class="err" id="sErr" hidden></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" id="cancelSettings">Cancel</button>
-      <button class="btn-save" id="saveSettings">Save</button>
     </div>
   </div>
 </div>
@@ -332,35 +281,22 @@ const fmtPct = n => n == null ? '—' : (n > 0 ? '+' : '') + n.toFixed(1) + '%';
 
 function actionClass(a){ return ['buy','sell','trim','hold','watch'].includes(a) ? a : 'hold'; }
 
-function cardHTML(c, held){
+function cardHTML(c, removable){
+  if (c.error){
+    return `<div class="empty">${c.message || ('Couldn\'t load ' + c.ticker + ' right now.')}</div>`;
+  }
   const cls = actionClass(c.action);
   const chgCls = c.change_pct >= 0 ? 'up' : 'down';
-  let numbers = '';
-  if (held){
-    numbers = `<div class="numbers">
-      <span>You bought at<b>${fmtVND(c.entry_price)}</b></span>
-      <span>Cut losses below<b>${fmtVND(c.stop)}</b></span>
-      <span>Aim for<b>${fmtVND(c.target)}</b></span>
-      ${c.unrealized_pl_pct!=null ? `<span>Unrealized<b style="color:${c.unrealized_pl_pct>=0?'var(--gain)':'var(--loss)'}">${fmtPct(c.unrealized_pl_pct)}</b></span>`:''}
-    </div>`;
-  } else {
-    numbers = `<div class="numbers">
-      ${c.entry!=null ? `<span>Buy near<b>${fmtVND(c.entry)}</b></span>`:''}
-      <span>Cut losses below<b>${fmtVND(c.stop)}</b></span>
-      <span>Aim for<b>${fmtVND(c.target)}</b></span>
-    </div>`;
-  }
-  const holdMeta = held ? `<div class="hold-meta">
-      ${c.conviction ? `<span>Conviction: <b>${c.conviction}</b></span>`:''}
-      ${c.held_days!=null ? `<span>Held <b>${c.held_days}d</b> of ${c.max_hold_days}d limit</span>`:''}
-    </div>` : '';
-  const exitBanner = c.exit_alert ? `<div class="exit-banner">⚠ Exit now — ${c.exit_reason || c.action_label}</div>` : '';
-  const extras = [c.insider, c.upcoming_event, c.news].filter(Boolean);
-  const extraHTML = extras.length ? `<div style="display:flex; flex-direction:column; gap:5px;">${extras.map(x=>`<div class="extra-line">${x}</div>`).join('')}</div>` : '';
-  const sizeHint = (!held && c.action === 'buy' && c.suggested_qty) ? `<div class="size-hint">Suggested size: ~${c.suggested_qty.toLocaleString('en-US')} shares (risking ~${fmtVND(c.risk_amount)})</div>` : '';
+  const numbers = `<div class="numbers">
+    ${c.entry!=null ? `<span>Buy near<b>${fmtVND(c.entry)}</b></span>`:''}
+    <span>Cut losses below<b>${fmtVND(c.stop)}</b></span>
+    <span>Aim for<b>${fmtVND(c.target)}</b></span>
+  </div>`;
+  const removeLink = removable
+    ? `<span onclick="event.stopPropagation();"><button class="remove-link" onclick="removeFromWatchlist('${c.ticker}')">Remove</button></span>`
+    : '';
   return `
-    <div class="card ${cls}${c.exit_alert ? ' exit-alert' : ''}" onclick="openChart('${c.ticker}')">
-      ${exitBanner}
+    <div class="card ${cls}" onclick="openChart('${c.ticker}')">
       <div class="card-top">
         <div class="ticker-block">
           <span class="ticker">${c.ticker}</span>
@@ -372,70 +308,32 @@ function cardHTML(c, held){
       <div class="why">${c.why}</div>
       ${c.heads_up ? `<div class="heads-up">${c.heads_up}</div>` : ''}
       ${numbers}
-      ${sizeHint}
-      ${holdMeta}
-      ${extraHTML}
-      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<span onclick="event.stopPropagation();"><button class="close-link" onclick="closePosition('${c.position_id}', ${c.price})">Close</button><button class="remove-link" onclick="removePosition('${c.position_id}')">Remove</button></span>`:''}</div>
+      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${removeLink}</div>
     </div>`;
 }
 
-async function removePosition(id){
-  if (!confirm('Remove this position from your portfolio? (This does NOT log a trade — use Close for a real exit.)')) return;
-  await fetch('/api/portfolio/' + id, { method: 'DELETE' });
+async function removeFromWatchlist(ticker){
+  await fetch('/api/watchlist/' + encodeURIComponent(ticker), { method: 'DELETE' });
   load();
 }
 
-async function closePosition(id, lastPrice){
-  const input = prompt('Exit price (₫ per share)?', Math.round(lastPrice));
-  if (input == null) return;
-  const exit_price = parseFloat(input);
-  if (!exit_price || exit_price <= 0){ alert('Enter a valid price.'); return; }
-  const r = await fetch(`/api/portfolio/${id}/close`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ exit_price })
-  });
-  if (r.ok){
-    const t = await r.json();
-    alert(`Closed ${t.ticker}: ${t.realized_pct > 0 ? '+' : ''}${t.realized_pct}% over ${t.held_days} days.`);
-  }
-  load();
-}
-
-function heroHTML(bench){
-  if (bench.portfolio_pct == null){
-    return `<div style="color:var(--text-muted); font-size:14px;">${bench.message || "Add a position to see how you're doing against the market."}</div>`;
-  }
-  const beating = bench.portfolio_pct >= bench.market_pct;
-  const gap = Math.abs(bench.portfolio_pct - (bench.market_pct ?? bench.portfolio_pct)).toFixed(1);
+function heroHTML(d){
+  const recommended = d.recommended || [];
+  const buyCount = recommended.filter(c => c.action === 'buy').length;
+  const acc = d.prediction_accuracy;
+  const accKnown = acc && acc.overall_accuracy_pct != null;
   return `
     <div class="hero-row">
-      <div class="hero-stat"><div class="num you">${fmtPct(bench.portfolio_pct)}</div><div class="lbl">Your portfolio</div></div>
-      <div class="hero-gap"><span>vs</span><span class="arrow"></span></div>
-      <div class="hero-stat"><div class="num mono" style="color:var(--text-muted); font-size:28px;">${fmtPct(bench.market_pct)}</div><div class="lbl">The market (VN-Index)</div></div>
+      <div class="hero-stat"><div class="num you">${buyCount}</div><div class="lbl">Buy idea${buyCount===1?'':'s'} right now</div></div>
+      <div class="hero-gap"><span>·</span><span class="arrow"></span></div>
+      <div class="hero-stat"><div class="num mono" style="color:var(--text-muted); font-size:28px;">${accKnown ? acc.overall_accuracy_pct + '%' : '—'}</div><div class="lbl">Recommendation accuracy</div></div>
     </div>
-    <div class="hero-verdict">${bench.market_pct==null ? "Couldn't reach the market index right now." :
-      (beating ? `You're beating the market by <b class="win">${gap} points</b>.` : `You're behind the market by <b class="lose">${gap} points</b> right now.`)}</div>`;
-}
-
-function targetHTML(p, plan){
-  if (!p || p.account_size == null){
-    return `<div style="color:var(--text-muted); font-size:13px;">Set your account size in Settings (⚙︎) to turn on target tracking — it splits your monthly goal into a 2-week target and tracks your actual P/L against it.</div>`;
-  }
-  const paceColor = plan.pace === 'ahead' ? 'var(--gain)' : (plan.pace === 'behind' ? 'var(--loss)' : 'var(--watch)');
-  return `
-    <div class="target-row">
-      <div><div class="num mono" style="font-size:30px; color:${paceColor}">${fmtPct(p.actual_pct)}</div><div class="lbl" style="font-size:11.5px; color:var(--text-muted);">This period so far</div></div>
-      <div style="color:var(--text-faint); padding-bottom:8px;">of</div>
-      <div><div class="num mono" style="font-size:22px; color:var(--text-muted);">${fmtPct(p.target_pct)}</div><div class="lbl" style="font-size:11.5px; color:var(--text-muted);">target (from ${p.monthly_target_pct}%/month)</div></div>
-    </div>
-    <div style="font-size:11.5px; color:var(--text-faint); margin-bottom:12px;">${p.days_remaining} of ${p.days_total} days left this period · P/L so far: ${fmtVND(p.pnl_vnd_period)}</div>
-    ${(plan.lines||[]).map(l => `<div class="plan-line">${l}</div>`).join('')}
-  `;
+    <div class="hero-verdict">Last scanned ${d.generated_at || '—'} · ${d.market_status ? d.market_status.label : ''}</div>`;
 }
 
 function accuracyHTML(acc, review){
   if (!acc || acc.overall_evaluated === 0){
-    return `<div class="alert-row"><div class="alert-body">No "buy" calls have completed their review window yet — each one is graded ${acc && acc.min_sample ? '' : ''}about two weeks after it's made. Check back soon.</div></div>`;
+    return `<div class="alert-row"><div class="alert-body">No "buy" calls have completed their review window yet — each one is graded about two weeks after it's made. Check back soon.</div></div>`;
   }
   const color = acc.overall_accuracy_pct >= acc.accuracy_target_pct ? 'var(--gain)' : 'var(--loss)';
   const rows = Object.entries(acc.by_ticker || {})
@@ -454,20 +352,20 @@ function showLoadError(message){
   document.getElementById('statusPill').innerHTML = `<span class="live off">Connection error</span>`;
   document.getElementById('heroBody').innerHTML = `<div style="color:var(--loss); font-size:13.5px;">${message} Tap Refresh above to try again.</div>`;
   const busy = '<div class="empty">Couldn\'t load — tap Refresh above.</div>';
-  document.getElementById('targetBody').innerHTML = busy;
-  document.getElementById('portfolioList').innerHTML = busy;
-  document.getElementById('watchbar').innerHTML = busy;
+  document.getElementById('recommendedList').innerHTML = busy;
+  document.getElementById('watchlistList').innerHTML = busy;
 }
 
 let _loadInFlight = false;
 async function load(){
-  // The free data source is throttled and a full scan can take a while —
-  // never let a slow in-flight request pile up behind the auto-refresh timer.
   if (_loadInFlight) return;
   _loadInFlight = true;
   let res, d;
+  // GET /api/dashboard reads a background-computed cache, so a normal load
+  // is near-instant -- this timeout is just a safety net for a genuine hang,
+  // not for a live scan (that's what the Refresh button's own timeout is for).
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 175000);  // 18 tickers at 12 calls/60s can need ~120s of throttle time alone; 175s gives real headroom so this only fires on a genuine hang
+  const timeoutId = setTimeout(() => controller.abort(), 20000);
   try {
     try {
       res = await fetch('/api/dashboard', { signal: controller.signal });
@@ -480,10 +378,7 @@ async function load(){
     d = await res.json();
   } catch (e) {
     _loadInFlight = false;
-    const msg = e.name === 'AbortError'
-      ? "The dashboard scan is taking longer than usual (the free data source is rate-limited)."
-      : "Couldn't reach the server right now.";
-    showLoadError(msg);
+    showLoadError("Couldn't reach the server right now.");
     return;
   }
   _loadInFlight = false;
@@ -492,48 +387,35 @@ async function load(){
   document.getElementById('statusPill').innerHTML =
     `<span class="live ${ms.open ? 'on':'off'}">${ms.label}</span>`;
 
-  document.getElementById('heroBody').innerHTML = heroHTML(d.benchmark);
-
-  const cbBanner = document.getElementById('cbBanner');
-  if (d.circuit_breaker && d.circuit_breaker.paused){
-    cbBanner.hidden = false;
-    cbBanner.innerHTML = `⏸ <span><b>New buys paused.</b> ${d.circuit_breaker.reason}</span>`;
-  } else {
-    cbBanner.hidden = true;
-  }
+  document.getElementById('heroBody').innerHTML = heroHTML(d);
 
   const ghBanner = document.getElementById('ghBanner');
   if (d.gh_sync_enabled === false){
     ghBanner.hidden = false;
-    ghBanner.innerHTML = `⚠ <span><b>Your data isn't auto-backed-up yet.</b> A free-tier restart can wipe your portfolio and settings — <a href="/api/backup" target="_blank">download a backup</a> now, or see deployment-status.md for the free, permanent-storage setup (a few minutes, one time).</span>`;
+    ghBanner.innerHTML = `⚠ <span><b>Your data isn't auto-backed-up yet.</b> A free-tier restart can wipe your watchlist — <a href="/api/backup" target="_blank">download a backup</a> now, or see deployment-status.md for the free, permanent-storage setup (a few minutes, one time).</span>`;
   } else {
     ghBanner.hidden = true;
   }
 
-  document.getElementById('targetPeriodLabel').textContent = d.period_progress ? d.period_progress.period_label : '';
-  document.getElementById('targetBody').innerHTML = targetHTML(d.period_progress, d.strategic_plan || {lines:[]});
-
   const acc = d.prediction_accuracy;
   document.getElementById('accuracyPanel').querySelector('summary').textContent =
-    `App prediction accuracy${acc && acc.overall_accuracy_pct != null ? ` (${acc.overall_accuracy_pct}%)` : ''}`;
+    `Recommendation accuracy${acc && acc.overall_accuracy_pct != null ? ` (${acc.overall_accuracy_pct}%)` : ''}`;
   document.getElementById('accuracyBody').innerHTML = accuracyHTML(acc, d.review_mode);
 
-  window._settings = d.settings || {};
+  const rec = d.recommended || [];
+  document.getElementById('recommendedCount').textContent =
+    rec.length ? `${rec.length} idea${rec.length>1?'s':''}` : '';
+  document.getElementById('recommendedList').innerHTML = rec.length
+    ? rec.map(c => cardHTML(c, false)).join('')
+    : `<div class="empty">Nothing standing out right now — check back after the next scan.</div>`;
 
-  const pf = d.portfolio;
-  const exitCount = pf.filter(c=>c.exit_alert).length;
-  document.getElementById('portfolioCount').textContent =
-    pf.length ? `${pf.length} holding${pf.length>1?'s':''}${exitCount ? ` · ${exitCount} EXIT NOW` : ` · ${pf.filter(c=>['sell','trim'].includes(c.action)).length} need a decision`}` : '';
-  document.getElementById('portfolioList').innerHTML =
-    pf.length ? pf.map(c => c.error ? `<div class="empty">${c.message}</div>` : cardHTML(c, true)).join('')
-               : `<div class="empty">No positions yet — tap "+ Add position" to start tracking your portfolio.</div>`;
+  const wl = d.my_watchlist || [];
+  document.getElementById('watchlistCount').textContent = wl.length ? `${wl.length} tracked` : '';
+  document.getElementById('watchlistList').innerHTML = wl.length
+    ? wl.map(c => cardHTML(c, true)).join('')
+    : `<div class="empty">No tickers yet — tap "+ Add ticker" to start tracking one.</div>`;
 
-  const wl = d.watchlist;
-  document.getElementById('watchbar').innerHTML = wl.length
-    ? wl.map(c => `<div class="watch-chip" onclick="openChart('${c.ticker}')"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}${c.action==='buy'&&c.suggested_qty ? ` · size ~${c.suggested_qty.toLocaleString('en-US')}` : ''}</span></div>`).join('')
-    : `<div class="empty">Nothing standing out right now.</div>`;
-
-  const alerts = d.alerts;
+  const alerts = d.alerts || [];
   document.getElementById('alertlog').querySelector('summary').textContent =
     `Today's alerts (${alerts.length})`;
   document.getElementById('alertRows').innerHTML = alerts.length
@@ -543,55 +425,40 @@ async function load(){
 
 document.getElementById('refreshBtn').onclick = async () => {
   const btn = document.getElementById('refreshBtn');
-  btn.disabled = true; btn.textContent = 'Checking…';
-  try { await fetch('/api/refresh', { method: 'POST' }); await load(); }
+  btn.disabled = true; btn.textContent = 'Scanning…';
+  // A forced refresh runs a real throttled scan, which can legitimately take
+  // up to ~1-2 minutes -- give it real headroom instead of the short timeout
+  // load() uses for its normal (cached, instant) reads.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 175000);
+  try {
+    await fetch('/api/refresh', { method: 'POST', signal: controller.signal });
+  } catch (e) {
+    // fall through to load() either way -- worst case it just re-reads whatever's cached
+  } finally {
+    clearTimeout(timeoutId);
+  }
+  try { await load(); }
   finally { btn.disabled = false; btn.textContent = 'Refresh'; }
 };
 
 const overlay = document.getElementById('overlay');
-document.getElementById('openAdd').onclick = () => { overlay.hidden = false; document.getElementById('fErr').hidden = true; };
+document.getElementById('openAdd').onclick = () => {
+  overlay.hidden = false;
+  document.getElementById('fErr').hidden = true;
+  document.getElementById('fTicker').value = '';
+};
 document.getElementById('cancelAdd').onclick = () => { overlay.hidden = true; };
 document.getElementById('saveAdd').onclick = async () => {
   const ticker = document.getElementById('fTicker').value.trim().toUpperCase();
-  const price = parseFloat(document.getElementById('fPrice').value);
-  const qty = parseFloat(document.getElementById('fQty').value);
-  const date = document.getElementById('fDate').value || null;
   const err = document.getElementById('fErr');
-  if (!ticker || !price || !qty){ err.textContent = 'Please fill in ticker, price, and shares.'; err.hidden = false; return; }
-  await fetch('/api/portfolio', {
+  if (!ticker){ err.textContent = 'Please enter a ticker.'; err.hidden = false; return; }
+  await fetch('/api/watchlist', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ ticker, entry_price: price, qty, entry_date: date })
+    body: JSON.stringify({ ticker })
   });
   overlay.hidden = true;
   document.getElementById('fTicker').value = '';
-  document.getElementById('fPrice').value = '';
-  document.getElementById('fQty').value = '';
-  document.getElementById('fDate').value = '';
-  load();
-};
-
-const settingsOverlay = document.getElementById('settingsOverlay');
-document.getElementById('openSettings').onclick = () => {
-  document.getElementById('sAccountSize').value = window._settings?.account_size ?? '';
-  document.getElementById('sRiskPct').value = window._settings?.risk_per_trade_pct ?? 1.5;
-  document.getElementById('sMonthlyTarget').value = window._settings?.monthly_target_pct ?? 15;
-  document.getElementById('sErr').hidden = true;
-  settingsOverlay.hidden = false;
-};
-document.getElementById('cancelSettings').onclick = () => { settingsOverlay.hidden = true; };
-document.getElementById('saveSettings').onclick = async () => {
-  const account_size = parseFloat(document.getElementById('sAccountSize').value) || null;
-  const risk_per_trade_pct = parseFloat(document.getElementById('sRiskPct').value) || null;
-  const monthly_target_pct = parseFloat(document.getElementById('sMonthlyTarget').value) || null;
-  const err = document.getElementById('sErr');
-  if (risk_per_trade_pct != null && (risk_per_trade_pct <= 0 || risk_per_trade_pct > 10)){
-    err.textContent = 'Risk per trade should be a small number, like 1-3%.'; err.hidden = false; return;
-  }
-  await fetch('/api/settings', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ account_size, risk_per_trade_pct, monthly_target_pct })
-  });
-  settingsOverlay.hidden = true;
   load();
 };
 
@@ -630,7 +497,6 @@ function renderChart(d){
       <span class="chg ${chgCls} mono">${fmtPct(d.change_pct)}</span>
       <span class="badge ${cls}">${d.action_label}</span>
     </div>
-    ${d.exit_alert ? `<div class="exit-banner">⚠ Exit now — ${d.exit_reason || d.action_label}</div>` : ''}
     <div class="why">${d.why}</div>
     ${d.heads_up ? `<div class="heads-up">${d.heads_up}</div>` : ''}
     <div class="numbers">
@@ -638,10 +504,6 @@ function renderChart(d){
       <span>Stop loss<b style="color:var(--loss)">${fmtVND(d.stop)}</b></span>
       <span>Take profit<b style="color:var(--gain)">${fmtVND(d.target)}</b></span>
       ${d.reward_risk != null ? `<span>Reward : risk<b>${d.reward_risk} : 1</b></span>` : ''}
-    </div>
-    <div class="hold-meta">
-      ${d.conviction ? `<span>Conviction: <b>${d.conviction}</b></span>`:''}
-      ${d.held_days!=null ? `<span>Held <b>${d.held_days}d</b> of ${d.max_hold_days}d limit</span>`:''}
     </div>
     <div class="chart-canvas" id="chartCanvas"></div>
     <div class="chart-legend">
@@ -763,7 +625,7 @@ async function runBacktest(ticker){
 }
 
 load();
-setInterval(load, 120000);
+setInterval(load, 60000);
 </script>
 </body>
 </html>
