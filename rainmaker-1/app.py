@@ -281,13 +281,53 @@ class ClosePosition(BaseModel):
     exit_date: Optional[str] = None
 
 
+_dashboard_cond = threading.Condition()
+_dashboard_state = {"building": False, "data": None, "error": None, "ts": 0.0}
+
+
 @app.get("/api/dashboard")
 def get_dashboard():
+    """Builds the dashboard, but never runs two full scans at once.
+
+    The free data source is throttled, so a full scan can legitimately take
+    over a minute. If a client gives up and retries (or the frontend's own
+    request timer fires) while the first scan is still running server-side,
+    a naive implementation would kick off a second concurrent scan that
+    competes with the first for the same rate-limit budget -- doubling the
+    wait instead of helping. Here, an overlapping request just waits for the
+    in-flight scan's result instead of starting a redundant one. A result
+    younger than 15s is also reused directly, which covers double-clicks and
+    duplicate tabs.
+    """
+    with _dashboard_cond:
+        if not _dashboard_state["building"] and (time.time() - _dashboard_state["ts"]) < 15 and _dashboard_state["data"] is not None:
+            return _dashboard_state["data"]
+        if _dashboard_state["building"]:
+            _dashboard_cond.wait(timeout=280)
+            if _dashboard_state["error"] is not None:
+                raise HTTPException(status_code=500, detail=_dashboard_state["error"])
+            if _dashboard_state["data"] is not None:
+                return _dashboard_state["data"]
+            # Fell through (timed out waiting, or the other build hasn't posted yet) -- fall
+            # back to building it ourselves rather than hanging forever.
+        _dashboard_state["building"] = True
+        _dashboard_state["error"] = None
+
     try:
-        return build_dashboard()
+        data = build_dashboard()
+        with _dashboard_cond:
+            _dashboard_state["data"] = data
+            _dashboard_state["ts"] = time.time()
+        return data
     except Exception as e:  # noqa: BLE001
         log.exception("dashboard build failed")
+        with _dashboard_cond:
+            _dashboard_state["error"] = str(e)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        with _dashboard_cond:
+            _dashboard_state["building"] = False
+            _dashboard_cond.notify_all()
 
 
 @app.post("/api/portfolio")
