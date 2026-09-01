@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rainmaker</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Rainmaker">
+<meta name="theme-color" content="#07070F">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --void:#07070F; --glass: rgba(255,255,255,0.045); --glass-2: rgba(255,255,255,0.03);
+    --hairline: rgba(255,255,255,0.09); --hairline-soft: rgba(255,255,255,0.055);
+    --text:#EDEAFB; --text-muted:#A79FD1; --text-faint:#6E698F;
+    --violet:#9D7BFF; --cyan:#33E4E0; --aurora: linear-gradient(120deg, #9D7BFF 0%, #33E4E0 100%);
+    --gain:#3FE3A0; --gain-soft: rgba(63,227,160,0.13);
+    --loss:#FF6D82; --loss-soft: rgba(255,109,130,0.14);
+    --watch:#FFC663; --watch-soft: rgba(255,198,99,0.14);
+    --radius:18px; --shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 44px -22px rgba(0,0,0,0.7);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:var(--void); color:var(--text);
+    font-family:'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing:antialiased; min-height:100vh; position:relative; overflow-x:hidden;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  h1,h2,h3{ font-family:'Sora','Plus Jakarta Sans',sans-serif; letter-spacing:-0.01em; }
+  .mono{ font-family:'IBM Plex Mono', ui-monospace, 'SF Mono', Consolas, monospace; font-variant-numeric:tabular-nums; }
+  button, input{ font-family:inherit; }
+
+  .cosmos{ position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden; }
+  .cosmos::before{ content:""; position:absolute; inset:-10%;
+    background: radial-gradient(38% 30% at 14% 8%, rgba(157,123,255,0.28), transparent 70%),
+                radial-gradient(45% 38% at 88% 18%, rgba(51,228,224,0.16), transparent 70%),
+                radial-gradient(50% 45% at 68% 96%, rgba(157,123,255,0.14), transparent 70%),
+                radial-gradient(30% 26% at 6% 88%, rgba(51,228,224,0.10), transparent 70%);
+    filter:blur(10px); animation:drift 36s ease-in-out infinite alternate; }
+  .cosmos::after{ content:""; position:absolute; inset:0;
+    background-image: radial-gradient(rgba(255,255,255,0.55) 0.7px, transparent 0.7px);
+    background-size: 3px 3px; opacity:0.05; }
+  @keyframes drift{ 0%{ transform:translate3d(0,0,0) scale(1);} 100%{ transform:translate3d(-2%,1.5%,0) scale(1.04);} }
+  @media (prefers-reduced-motion:reduce){ .cosmos::before{ animation:none; } }
+
+  .shell{ position:relative; z-index:1; max-width:900px; margin:0 auto; padding:26px 18px 70px; }
+
+  .topbar{ display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .orb{ width:32px; height:32px; border-radius:50%; flex:none;
+        background: radial-gradient(circle at 32% 28%, #fff, #C9B8FF 24%, #9D7BFF 55%, #3A2E7A 100%);
+        box-shadow: 0 0 22px 2px rgba(157,123,255,0.55), 0 0 46px 10px rgba(51,228,224,0.18); }
+  .brand h1{ font-size:19px; font-weight:700; margin:0; }
+  .brand .sub{ font-size:11.5px; color:var(--text-faint); margin-top:1px; }
+
+  .status-pill{ display:flex; align-items:center; gap:9px; background:var(--glass); border:1px solid var(--hairline);
+    border-radius:999px; padding:7px 14px; font-size:12px; color:var(--text-muted); backdrop-filter:blur(14px); }
+  .status-pill .live{ display:flex; align-items:center; gap:6px; font-weight:600; }
+  .status-pill .live.on{ color:var(--gain); }
+  .status-pill .live.off{ color:var(--text-faint); }
+  .status-pill .live::before{ content:""; width:7px; height:7px; border-radius:50%; background:currentColor; box-shadow:0 0 8px 1px currentColor; }
+  .status-pill .live.on::before{ animation:pulse 2.4s infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+  @media (prefers-reduced-motion:reduce){ .status-pill .live::before{ animation:none; } }
+
+  .refresh-btn{ background:var(--glass); border:1px solid var(--hairline); color:var(--text); border-radius:999px;
+    padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer; backdrop-filter:blur(14px); }
+  .refresh-btn:active{ transform:scale(0.97); }
+  .refresh-btn:disabled{ opacity:0.5; }
+
+  .hero{ background:var(--glass); border:1px solid var(--hairline); border-radius:24px; padding:26px 24px;
+    margin-bottom:18px; backdrop-filter:blur(18px); box-shadow:var(--shadow); position:relative; overflow:hidden; }
+  .hero::before{ content:""; position:absolute; top:-40%; right:-10%; width:60%; height:180%;
+    background:radial-gradient(circle, rgba(157,123,255,0.16), transparent 65%); pointer-events:none; }
+  .hero-label{ font-size:11.5px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); font-weight:600; margin-bottom:12px; }
+  .hero-row{ display:flex; align-items:flex-end; gap:26px; flex-wrap:wrap; }
+  .hero-stat .num{ font-family:'Sora',sans-serif; font-size:38px; font-weight:700; line-height:1; }
+  .hero-stat .num.you{ background:var(--aurora); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .hero-stat .lbl{ font-size:12.5px; color:var(--text-muted); margin-top:7px; }
+  .hero-gap{ display:flex; flex-direction:column; align-items:center; gap:5px; color:var(--text-faint); font-size:12px; padding-bottom:6px; }
+  .hero-gap .arrow{ width:44px; height:2px; background:var(--aurora); border-radius:2px; }
+  .hero-verdict{ margin-top:16px; font-size:13.5px; color:var(--text); }
+  .hero-verdict b{ font-weight:700; }
+  .hero-verdict b.win{ color:var(--gain); } .hero-verdict b.lose{ color:var(--loss); }
+
+  .context-strip{ display:flex; align-items:center; gap:10px; background:var(--glass-2); border:1px solid var(--hairline-soft);
+    border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12.5px; color:var(--text-muted); }
+  .context-strip svg{ flex:none; color:var(--cyan); }
+
+  .note{ font-size:11px; color:var(--text-faint); border:1px dashed var(--hairline); border-radius:10px; padding:6px 12px; margin-bottom:18px; display:inline-block; }
+
+  .panel{ background:var(--glass); border:1px solid var(--hairline); border-radius:var(--radius); box-shadow:var(--shadow);
+    overflow:hidden; margin-bottom:20px; backdrop-filter:blur(16px); }
+  .panel-head{ display:flex; align-items:baseline; justify-content:space-between; padding:16px 20px 12px; border-bottom:1px solid var(--hairline-soft); gap:10px; flex-wrap:wrap; }
+  .panel-head h2{ font-size:15px; margin:0; font-weight:700; }
+  .panel-head .count{ font-size:11px; color:var(--text-faint); }
+  .add-btn{ background:none; border:1px solid var(--hairline); color:var(--violet); border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+
+  .card{ padding:18px 20px; border-bottom:1px solid var(--hairline-soft); display:flex; flex-direction:column; gap:10px; position:relative; }
+  .card:last-child{ border-bottom:none; }
+  .card::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; }
+  .card.buy::before{ background:var(--gain); box-shadow:0 0 12px 1px var(--gain-soft); }
+  .card.sell::before{ background:var(--loss); box-shadow:0 0 12px 1px var(--loss-soft); }
+  .card.trim::before, .card.hold::before, .card.watch::before{ background:var(--watch); box-shadow:0 0 12px 1px var(--watch-soft); }
+
+  .card-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .ticker-block{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+  .ticker{ font-family:'Sora',sans-serif; font-weight:700; font-size:15.5px; }
+  .price{ font-size:12.5px; color:var(--text-muted); }
+  .chg{ font-size:11.5px; font-weight:600; padding:1px 7px; border-radius:6px; }
+  .chg.up{ color:var(--gain); background:var(--gain-soft); }
+  .chg.down{ color:var(--loss); background:var(--loss-soft); }
+
+  .badge{ font-size:10.5px; font-weight:700; letter-spacing:0.02em; padding:5px 11px; border-radius:999px; border:1px solid transparent; white-space:nowrap; }
+  .badge.buy{ color:var(--gain); background:var(--gain-soft); border-color:rgba(63,227,160,0.35); }
+  .badge.sell{ color:var(--loss); background:var(--loss-soft); border-color:rgba(255,109,130,0.35); }
+  .badge.trim{ color:var(--watch); background:var(--watch-soft); border-color:rgba(255,198,99,0.35); }
+  .badge.hold{ color:var(--text-muted); background:var(--glass-2); border-color:var(--hairline); }
+  .badge.watch{ color:var(--watch); background:var(--watch-soft); border-color:rgba(255,198,99,0.35); }
+
+  .why{ font-size:13px; line-height:1.5; color:var(--text); }
+  .heads-up{ display:flex; gap:7px; align-items:flex-start; font-size:12px; color:var(--watch); background:var(--watch-soft); border-radius:10px; padding:7px 11px; }
+  .numbers{ display:flex; gap:16px; flex-wrap:wrap; font-size:12px; }
+  .numbers span{ color:var(--text-faint); }
+  .numbers b{ font-family:'IBM Plex Mono',monospace; color:var(--text); font-weight:600; margin-left:4px; }
+  .conf{ font-size:10.5px; color:var(--text-faint); display:flex; justify-content:space-between; align-items:center; }
+  .conf b{ color:var(--violet); }
+  .remove-link{ color:var(--text-faint); text-decoration:underline; cursor:pointer; font-size:11px; background:none; border:none; padding:0; }
+
+  .empty{ padding:26px 20px; color:var(--text-faint); font-size:13px; text-align:center; }
+
+  .section-label{ font-size:11.5px; font-weight:600; color:var(--text-faint); margin:0 0 10px 4px; }
+  .watchbar{ display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .watch-chip{ display:flex; align-items:center; gap:9px; padding:10px 13px; border:1px solid var(--hairline); border-radius:14px;
+    background:var(--glass); backdrop-filter:blur(14px); font-size:12px; box-shadow:var(--shadow); }
+  .watch-chip .dot{ width:7px; height:7px; border-radius:50%; flex:none; background:var(--cyan); box-shadow:0 0 8px 1px rgba(51,228,224,0.6); }
+  .watch-chip .price{ color:var(--text-faint); }
+  .watch-chip .reason{ color:var(--text-muted); }
+
+  .alertlog{ background:var(--glass-2); border:1px solid var(--hairline-soft); border-radius:16px; margin-bottom:22px; font-size:12px; }
+  .alertlog summary{ padding:12px 16px; cursor:pointer; color:var(--text-muted); font-weight:600; list-style:none; display:flex; align-items:center; gap:8px; }
+  .alertlog summary::-webkit-details-marker{ display:none; }
+  .alertlog summary::before{ content:"›"; font-size:14px; color:var(--violet); transition:transform 0.15s ease; }
+  .alertlog[open] summary::before{ transform:rotate(90deg); }
+  .alert-row{ padding:10px 16px; border-top:1px solid var(--hairline-soft); display:flex; gap:10px; }
+  .alert-time{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text-faint); white-space:nowrap; }
+  .alert-body{ font-size:12px; color:var(--text-muted); }
+
+  .footer-line{ text-align:center; font-size:12px; color:var(--text-faint); padding-top:6px; }
+  .footer-line b{ background:var(--aurora); -webkit-background-clip:text; background-clip:text; color:transparent; font-weight:600; }
+
+  /* add-position modal */
+  .overlay{ position:fixed; inset:0; background:rgba(3,3,8,0.7); backdrop-filter:blur(4px); z-index:10;
+    display:flex; align-items:flex-end; justify-content:center; }
+  @media (min-width:640px){ .overlay{ align-items:center; } }
+  .overlay[hidden]{ display:none; }
+  .modal{ background:#121020; border:1px solid var(--hairline); border-radius:20px 20px 0 0; padding:22px; width:100%; max-width:420px; }
+  @media (min-width:640px){ .modal{ border-radius:20px; } }
+  .modal h3{ margin:0 0 14px; font-size:16px; }
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-size:11.5px; color:var(--text-faint); margin-bottom:5px; }
+  .field input{ width:100%; background:var(--glass); border:1px solid var(--hairline); border-radius:10px; padding:10px 12px; color:var(--text); font-size:14px; }
+  .modal-actions{ display:flex; gap:10px; margin-top:16px; }
+  .modal-actions button{ flex:1; padding:11px; border-radius:12px; border:none; font-weight:600; font-size:13.5px; cursor:pointer; }
+  .btn-cancel{ background:var(--glass); color:var(--text-muted); border:1px solid var(--hairline) !important; }
+  .btn-save{ background:var(--aurora); color:#0a0a14; }
+  .err{ color:var(--loss); font-size:12px; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<div class="cosmos"></div>
+
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <span class="orb"></span>
+      <div><h1>Rainmaker</h1><div class="sub">Your money, working — plain and simple</div></div>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <div class="status-pill" id="statusPill"><span class="live off">Loading…</span></div>
+      <button class="refresh-btn" id="refreshBtn">Refresh</button>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="hero-label">The only number that matters</div>
+    <div id="heroBody">Loading…</div>
+  </div>
+
+  <div class="context-strip">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"/></svg>
+    <span>Rainmaker checks your portfolio automatically at 10:30 and 14:30 every trading day, and any time you tap Refresh.</span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Your portfolio</h2>
+      <span class="count" id="portfolioCount">—</span>
+      <button class="add-btn" id="openAdd">+ Add position</button>
+    </div>
+    <div id="portfolioList"><div class="empty">Loading…</div></div>
+  </div>
+
+  <div class="section-label">Worth a look outside your portfolio</div>
+  <div class="watchbar" id="watchbar"><div class="empty">Loading…</div></div>
+
+  <details class="alertlog" id="alertlog">
+    <summary>Today's alerts</summary>
+    <div id="alertRows"></div>
+  </details>
+
+  <div class="footer-line">Everything here exists for <b>one job</b> — growing your money faster than the market.</div>
+  <div class="footer-line" style="margin-top:8px;"><a href="/api/backup" target="_blank" style="color:var(--text-faint);">Back up my portfolio data</a></div>
+</div>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="modal">
+    <h3>Add a position</h3>
+    <div class="field"><label>Ticker (e.g. HPG)</label><input id="fTicker" maxlength="6" autocapitalize="characters"></div>
+    <div class="field"><label>Price you paid (₫ per share)</label><input id="fPrice" type="number" inputmode="decimal"></div>
+    <div class="field"><label>Number of shares</label><input id="fQty" type="number" inputmode="numeric"></div>
+    <div class="field"><label>Date bought</label><input id="fDate" type="date"></div>
+    <div class="err" id="fErr" hidden></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelAdd">Cancel</button>
+      <button class="btn-save" id="saveAdd">Add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmtVND = n => n == null ? '—' : Math.round(n).toLocaleString('en-US') + '₫';
+const fmtPct = n => n == null ? '—' : (n > 0 ? '+' : '') + n.toFixed(1) + '%';
+
+function actionClass(a){ return ['buy','sell','trim','hold','watch'].includes(a) ? a : 'hold'; }
+
+function cardHTML(c, held){
+  const cls = actionClass(c.action);
+  const chgCls = c.change_pct >= 0 ? 'up' : 'down';
+  let numbers = '';
+  if (held){
+    numbers = `<div class="numbers">
+      <span>You bought at<b>${fmtVND(c.entry_price)}</b></span>
+      <span>Cut losses below<b>${fmtVND(c.stop)}</b></span>
+      <span>Aim for<b>${fmtVND(c.target)}</b></span>
+      ${c.unrealized_pl_pct!=null ? `<span>Unrealized<b style="color:${c.unrealized_pl_pct>=0?'var(--gain)':'var(--loss)'}">${fmtPct(c.unrealized_pl_pct)}</b></span>`:''}
+    </div>`;
+  } else {
+    numbers = `<div class="numbers">
+      ${c.entry!=null ? `<span>Buy near<b>${fmtVND(c.entry)}</b></span>`:''}
+      <span>Cut losses below<b>${fmtVND(c.stop)}</b></span>
+      <span>Aim for<b>${fmtVND(c.target)}</b></span>
+    </div>`;
+  }
+  return `
+    <div class="card ${cls}">
+      <div class="card-top">
+        <div class="ticker-block">
+          <span class="ticker">${c.ticker}</span>
+          <span class="price mono">${fmtVND(c.price)}</span>
+          <span class="chg ${chgCls} mono">${fmtPct(c.change_pct)}</span>
+        </div>
+        <span class="badge ${cls}">${c.action_label}</span>
+      </div>
+      <div class="why">${c.why}</div>
+      ${c.heads_up ? `<div class="heads-up">${c.heads_up}</div>` : ''}
+      ${numbers}
+      <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<button class="remove-link" onclick="removePosition('${c.position_id}')">Remove</button>`:''}</div>
+    </div>`;
+}
+
+async function removePosition(id){
+  if (!confirm('Remove this position from your portfolio?')) return;
+  await fetch('/api/portfolio/' + id, { method: 'DELETE' });
+  load();
+}
+
+function heroHTML(bench){
+  if (bench.portfolio_pct == null){
+    return `<div style="color:var(--text-muted); font-size:14px;">${bench.message || 'Add a position to see how you\\'re doing against the market.'}</div>`;
+  }
+  const beating = bench.portfolio_pct >= bench.market_pct;
+  const gap = Math.abs(bench.portfolio_pct - (bench.market_pct ?? bench.portfolio_pct)).toFixed(1);
+  return `
+    <div class="hero-row">
+      <div class="hero-stat"><div class="num you">${fmtPct(bench.portfolio_pct)}</div><div class="lbl">Your portfolio</div></div>
+      <div class="hero-gap"><span>vs</span><span class="arrow"></span></div>
+      <div class="hero-stat"><div class="num mono" style="color:var(--text-muted); font-size:28px;">${fmtPct(bench.market_pct)}</div><div class="lbl">The market (VN-Index)</div></div>
+    </div>
+    <div class="hero-verdict">${bench.market_pct==null ? "Couldn't reach the market index right now." :
+      (beating ? `You're beating the market by <b class="win">${gap} points</b>.` : `You're behind the market by <b class="lose">${gap} points</b> right now.`)}</div>`;
+}
+
+async function load(){
+  const res = await fetch('/api/dashboard');
+  const d = await res.json();
+
+  const ms = d.market_status;
+  document.getElementById('statusPill').innerHTML =
+    `<span class="live ${ms.open ? 'on':'off'}">${ms.label}</span>`;
+
+  document.getElementById('heroBody').innerHTML = heroHTML(d.benchmark);
+
+  const pf = d.portfolio;
+  document.getElementById('portfolioCount').textContent =
+    pf.length ? `${pf.length} holding${pf.length>1?'s':''} · ${pf.filter(c=>['sell','trim'].includes(c.action)).length} need a decision` : '';
+  document.getElementById('portfolioList').innerHTML =
+    pf.length ? pf.map(c => c.error ? `<div class="empty">${c.message}</div>` : cardHTML(c, true)).join('')
+               : `<div class="empty">No positions yet — tap "+ Add position" to start tracking your portfolio.</div>`;
+
+  const wl = d.watchlist;
+  document.getElementById('watchbar').innerHTML = wl.length
+    ? wl.map(c => `<div class="watch-chip"><span class="dot"></span><span class="ticker">${c.ticker}</span><span class="price mono">${fmtVND(c.price)}</span><span class="reason">${c.why}</span></div>`).join('')
+    : `<div class="empty">Nothing standing out right now.</div>`;
+
+  const alerts = d.alerts;
+  document.getElementById('alertlog').querySelector('summary').textContent =
+    `Today's alerts (${alerts.length})`;
+  document.getElementById('alertRows').innerHTML = alerts.length
+    ? alerts.map(a => `<div class="alert-row"><div class="alert-time mono">${a.time}</div><div class="alert-body"><b>${a.label}:</b> ${a.summary}</div></div>`).join('')
+    : `<div class="alert-row"><div class="alert-body">No alerts logged yet today.</div></div>`;
+}
+
+document.getElementById('refreshBtn').onclick = async () => {
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true; btn.textContent = 'Checking…';
+  try { await fetch('/api/refresh', { method: 'POST' }); await load(); }
+  finally { btn.disabled = false; btn.textContent = 'Refresh'; }
+};
+
+const overlay = document.getElementById('overlay');
+document.getElementById('openAdd').onclick = () => { overlay.hidden = false; document.getElementById('fErr').hidden = true; };
+document.getElementById('cancelAdd').onclick = () => { overlay.hidden = true; };
+document.getElementById('saveAdd').onclick = async () => {
+  const ticker = document.getElementById('fTicker').value.trim().toUpperCase();
+  const price = parseFloat(document.getElementById('fPrice').value);
+  const qty = parseFloat(document.getElementById('fQty').value);
+  const date = document.getElementById('fDate').value || null;
+  const err = document.getElementById('fErr');
+  if (!ticker || !price || !qty){ err.textContent = 'Please fill in ticker, price, and shares.'; err.hidden = false; return; }
+  await fetch('/api/portfolio', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ ticker, entry_price: price, qty, entry_date: date })
+  });
+  overlay.hidden = true;
+  document.getElementById('fTicker').value = '';
+  document.getElementById('fPrice').value = '';
+  document.getElementById('fQty').value = '';
+  document.getElementById('fDate').value = '';
+  load();
+};
+
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>

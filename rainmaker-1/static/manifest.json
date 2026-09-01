@@ -1,0 +1,13 @@
+{
+  "name": "Rainmaker",
+  "short_name": "Rainmaker",
+  "description": "Your personal VN stock portfolio dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07070F",
+  "theme_color": "#07070F",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

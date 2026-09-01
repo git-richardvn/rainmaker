@@ -1,0 +1,7 @@
+fastapi>=0.111
+uvicorn[standard]>=0.30
+vnstock>=4.0.7
+pandas>=2.0
+numpy>=1.24
+requests>=2.31
+python-dateutil>=2.9
