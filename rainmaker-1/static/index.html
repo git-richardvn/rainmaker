@@ -197,6 +197,7 @@
 
   .cb-banner{ display:flex; align-items:center; gap:9px; background:var(--watch-soft); border:1px solid rgba(255,198,99,0.35);
     color:var(--watch); border-radius:14px; padding:11px 16px; margin-bottom:18px; font-size:12.5px; }
+  .cb-banner[hidden]{ display:none; }
 
   .extra-line{ font-size:11.5px; color:var(--text-muted); background:var(--glass-2); border-radius:8px; padding:6px 10px; }
   .extra-line b{ color:var(--text-faint); font-weight:600; }
@@ -389,9 +390,19 @@ function heroHTML(bench){
       (beating ? `You're beating the market by <b class="win">${gap} points</b>.` : `You're behind the market by <b class="lose">${gap} points</b> right now.`)}</div>`;
 }
 
+let _loadInFlight = false;
 async function load(){
-  const res = await fetch('/api/dashboard');
-  const d = await res.json();
+  // The free data source is throttled and a full scan can take a while —
+  // never let a slow in-flight request pile up behind the auto-refresh timer.
+  if (_loadInFlight) return;
+  _loadInFlight = true;
+  let res, d;
+  try {
+    res = await fetch('/api/dashboard');
+    d = await res.json();
+  } finally {
+    _loadInFlight = false;
+  }
 
   const ms = d.market_status;
   document.getElementById('statusPill').innerHTML =
@@ -650,7 +661,7 @@ async function runBacktest(ticker){
 }
 
 load();
-setInterval(load, 60000);
+setInterval(load, 120000);
 </script>
 </body>
 </html>
