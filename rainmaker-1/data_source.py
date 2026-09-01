@@ -47,9 +47,23 @@ def _throttle() -> None:
 
 VNINDEX_SYMBOL = "VNINDEX"
 
+# A broader, still-liquid VN30/VN100-style universe for the daily scanner —
+# hardcoded rather than fetched live (vnstock's group-membership endpoint is
+# an extra, less reliable network hop for something that changes rarely; this
+# list should be refreshed by hand every few months rather than trusted to
+# always match the official VN30 basket exactly). Bigger than v0.1's 10-ticker
+# list per Richard's "scan more than a fixed watchlist" ask — the throttle in
+# _throttle() still protects the free vnstock rate limit either way.
 DEFAULT_UNIVERSE = [
     "VNM", "HPG", "FPT", "VIC", "MWG", "SSI", "VCB", "MSN", "VHM", "GAS",
+    "VIB", "VPB", "TCB", "MBB", "CTG", "BID", "ACB", "STB", "TPB", "SHB",
+    "VRE", "PLX", "POW", "GVR", "SAB", "VJC", "PNJ", "DGC", "NKG", "HSG",
 ]
+
+_INSIDER_CACHE: dict[str, tuple[float, Optional[str]]] = {}
+_EVENT_CACHE: dict[str, tuple[float, Optional[str]]] = {}
+_NEWS_CACHE: dict[str, tuple[float, Optional[str]]] = {}
+_COMPANY_EXTRA_TTL_SECONDS = 3600  # these change slowly — an hour-old read is fine, and it's a big rate-limit saving
 
 
 def _normalize(df: pd.DataFrame) -> pd.DataFrame:
@@ -73,7 +87,8 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
     """Daily OHLCV, ascending by date. Raises on failure — callers must handle it
     and show 'data not available', never guess."""
     now = time.time()
-    cached = _HISTORY_CACHE.get(symbol)
+    cache_key = (symbol, days)  # keyed by days too — a 260-day dashboard read must never satisfy a 1500-day backtest request
+    cached = _HISTORY_CACHE.get(cache_key)
     if cached and now - cached[0] < _CACHE_TTL_SECONDS:
         return cached[1]
 
@@ -99,7 +114,7 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
                 # index itself is already in points, not currency — leave it.
                 for col in ("open", "high", "low", "close"):
                     df[col] = df[col] * 1000
-            _HISTORY_CACHE[symbol] = (now, df)
+            _HISTORY_CACHE[cache_key] = (now, df)
             return df
         except (Exception, SystemExit) as e:  # noqa: BLE001 — vnstock's rate limiter uses sys.exit()
             last_err = e
@@ -137,6 +152,141 @@ def get_foreign_net_today(symbol: str) -> Optional[float]:
     except (Exception, SystemExit) as e:  # noqa: BLE001 — vnstock's rate limiter uses sys.exit()
         log.warning("foreign flow fetch failed for %s: %s", symbol, e)
         _FOREIGN_CACHE[symbol] = (now, None)
+        return None
+
+
+def _first_col(df: pd.DataFrame, *name_fragments: str) -> Optional[str]:
+    """Finds the first column whose lowercased name contains any of the given
+    fragments. vnstock's less-central endpoints (insider/events/news) aren't as
+    stable in column naming as the core price history, so every reader below
+    goes through this instead of a hardcoded column name."""
+    for c in df.columns:
+        lc = str(c).lower()
+        if any(f in lc for f in name_fragments):
+            return c
+    return None
+
+
+def get_insider_trading(symbol: str, lookback_days: int = 30) -> Optional[str]:
+    """Most recent disclosed insider/major-shareholder transaction within the
+    lookback window, as a short plain-English line — or None if the source
+    doesn't have one, the call fails, or nothing recent exists. Best-effort
+    only: this is a real VN-market signal per KB Section 8, but vnstock's
+    coverage of it is not guaranteed, so it's never treated as a basis for a
+    buy/sell call on its own, only as extra context on an already-held ticker."""
+    now = time.time()
+    cached = _INSIDER_CACHE.get(symbol)
+    if cached and now - cached[0] < _COMPANY_EXTRA_TTL_SECONDS:
+        return cached[1]
+    try:
+        from vnstock.api.company import Company
+        _throttle()
+        df = Company(symbol=symbol, source="VCI").insider_trading()
+        if df is None or len(df) == 0:
+            _INSIDER_CACHE[symbol] = (now, None)
+            return None
+        date_col = _first_col(df, "date", "time")
+        who_col = _first_col(df, "name", "holder", "person")
+        action_col = _first_col(df, "action", "type", "transaction")
+        qty_col = _first_col(df, "quantity", "volume", "shares")
+        if date_col is None:
+            _INSIDER_CACHE[symbol] = (now, None)
+            return None
+        df = df.copy()
+        df["_d"] = pd.to_datetime(df[date_col], errors="coerce")
+        cutoff = pd.Timestamp.now() - pd.Timedelta(days=lookback_days)
+        recent = df[df["_d"] >= cutoff].sort_values("_d", ascending=False)
+        if len(recent) == 0:
+            _INSIDER_CACHE[symbol] = (now, None)
+            return None
+        row = recent.iloc[0]
+        who = str(row[who_col]) if who_col else "An insider/major shareholder"
+        action = str(row[action_col]) if action_col else "transacted"
+        qty = f" ({row[qty_col]:,.0f} shares)" if qty_col and pd.notna(row[qty_col]) else ""
+        line = f"{who} — {action}{qty} on {row['_d'].date()}"
+        _INSIDER_CACHE[symbol] = (now, line)
+        return line
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        log.info("insider trading fetch unavailable for %s: %s", symbol, e)
+        _INSIDER_CACHE[symbol] = (now, None)
+        return None
+
+
+def get_upcoming_events(symbol: str, lookahead_days: int = 45) -> Optional[str]:
+    """Nearest upcoming disclosed corporate event (AGM, dividend, rights issue,
+    etc.) within the lookahead window — a short line, or None. Best-effort,
+    same caveats as get_insider_trading above."""
+    now = time.time()
+    cached = _EVENT_CACHE.get(symbol)
+    if cached and now - cached[0] < _COMPANY_EXTRA_TTL_SECONDS:
+        return cached[1]
+    try:
+        from vnstock.api.company import Company
+        _throttle()
+        df = Company(symbol=symbol, source="VCI").events()
+        if df is None or len(df) == 0:
+            _EVENT_CACHE[symbol] = (now, None)
+            return None
+        date_col = _first_col(df, "date", "time")
+        title_col = _first_col(df, "title", "event", "name", "content")
+        if date_col is None:
+            _EVENT_CACHE[symbol] = (now, None)
+            return None
+        df = df.copy()
+        df["_d"] = pd.to_datetime(df[date_col], errors="coerce")
+        now_ts = pd.Timestamp.now()
+        upcoming = df[(df["_d"] >= now_ts) & (df["_d"] <= now_ts + pd.Timedelta(days=lookahead_days))]
+        upcoming = upcoming.sort_values("_d")
+        if len(upcoming) == 0:
+            _EVENT_CACHE[symbol] = (now, None)
+            return None
+        row = upcoming.iloc[0]
+        title = str(row[title_col]) if title_col else "Corporate event"
+        line = f"{title} on {row['_d'].date()}"
+        _EVENT_CACHE[symbol] = (now, line)
+        return line
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        log.info("events fetch unavailable for %s: %s", symbol, e)
+        _EVENT_CACHE[symbol] = (now, None)
+        return None
+
+
+def get_recent_news(symbol: str, lookback_days: int = 5) -> Optional[str]:
+    """Most recent headline within the lookback window — a short line, or
+    None. This is a headline flag, not sentiment analysis: it tells Richard
+    something was published, not whether it's good or bad, matching KB
+    Section 8's rule that news is context attached to a ticker, never a
+    signal generated on its own."""
+    now = time.time()
+    cached = _NEWS_CACHE.get(symbol)
+    if cached and now - cached[0] < _COMPANY_EXTRA_TTL_SECONDS:
+        return cached[1]
+    try:
+        from vnstock.api.company import Company
+        _throttle()
+        df = Company(symbol=symbol, source="VCI").news()
+        if df is None or len(df) == 0:
+            _NEWS_CACHE[symbol] = (now, None)
+            return None
+        date_col = _first_col(df, "date", "time", "published")
+        title_col = _first_col(df, "title", "headline", "content")
+        if date_col is None or title_col is None:
+            _NEWS_CACHE[symbol] = (now, None)
+            return None
+        df = df.copy()
+        df["_d"] = pd.to_datetime(df[date_col], errors="coerce")
+        cutoff = pd.Timestamp.now() - pd.Timedelta(days=lookback_days)
+        recent = df[df["_d"] >= cutoff].sort_values("_d", ascending=False)
+        if len(recent) == 0:
+            _NEWS_CACHE[symbol] = (now, None)
+            return None
+        row = recent.iloc[0]
+        line = f"{str(row[title_col])[:140]} ({row['_d'].date()})"
+        _NEWS_CACHE[symbol] = (now, line)
+        return line
+    except (Exception, SystemExit) as e:  # noqa: BLE001
+        log.info("news fetch unavailable for %s: %s", symbol, e)
+        _NEWS_CACHE[symbol] = (now, None)
         return None
 
 

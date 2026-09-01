@@ -614,6 +614,87 @@ def compute_trendline(df: pd.DataFrame, trend: str, lookback: int = 90) -> Optio
     }
 
 
+def backtest(df: pd.DataFrame, ticker: str = "BACKTEST") -> dict:
+    """Walk-forward simulation of THIS engine's own current rules (including
+    the 4.11 short-term policy — confluence gate, fee-aware filter, time-stop)
+    against real historical bars, so 'does this actually work' has a measured
+    answer instead of a guessed one, per KB Section 13. No lookahead: on day i,
+    only bars up to and including i are visible when a signal is evaluated.
+
+    Simplifications, stated plainly rather than hidden: a signal on day i is
+    assumed filled at day i's close (a real fill would be the next day's open);
+    stop/target are frozen at entry, not trailed; only one position is
+    simulated at a time (no concurrent positions); and foreign-flow data isn't
+    available historically here, so foreign-net-buy confluence never fires in
+    a backtest — real live signals can score one point higher than this shows.
+    Round-trip fees (FEE_ROUND_TRIP_PCT) are deducted from every trade's return."""
+    df = df.copy()
+    df.columns = [c.lower() for c in df.columns]
+    n = len(df)
+    min_bars = MIN_BARS_FOR_TREND + 10
+    if n < min_bars + 5:
+        return {"ticker": ticker, "trades": 0, "note": "Not enough history to backtest (need 70+ bars)."}
+
+    trades: list[dict] = []
+    open_trade: Optional[dict] = None
+    i = min_bars
+    while i < n:
+        sub = df.iloc[: i + 1].reset_index(drop=True)
+        reading = build_reading(ticker, sub, foreign_net_today=None)
+        day = df.iloc[i]
+        if open_trade is None:
+            rec = recommend(reading, held=None)
+            if rec is not None and rec.action == "buy" and rec.entry and rec.stop and rec.target:
+                open_trade = {
+                    "entry_idx": i, "entry_date": str(day["time"].date()),
+                    "entry_price": float(rec.entry), "stop": float(rec.stop), "target": float(rec.target),
+                    "max_hold_days": rec.max_hold_days,
+                }
+        else:
+            exit_price, reason = None, None
+            if float(day["low"]) <= open_trade["stop"]:
+                exit_price, reason = open_trade["stop"], "stop"
+            elif float(day["high"]) >= open_trade["target"]:
+                exit_price, reason = open_trade["target"], "target"
+            elif (i - open_trade["entry_idx"]) >= open_trade["max_hold_days"]:
+                exit_price, reason = float(day["close"]), "time-stop"
+            if exit_price is not None:
+                gross_pct = (exit_price / open_trade["entry_price"] - 1) * 100
+                net_pct = gross_pct - FEE_ROUND_TRIP_PCT
+                trades.append({
+                    "entry_date": open_trade["entry_date"], "exit_date": str(day["time"].date()),
+                    "entry_price": round(open_trade["entry_price"], 2), "exit_price": round(exit_price, 2),
+                    "held_days": i - open_trade["entry_idx"], "reason": reason,
+                    "return_pct_after_fees": round(net_pct, 2),
+                })
+                open_trade = None
+        i += 1
+
+    if not trades:
+        return {"ticker": ticker, "trades": 0, "note": "No qualifying buy signals fired in this history."}
+
+    wins = [t for t in trades if t["return_pct_after_fees"] > 0]
+    avg_return = sum(t["return_pct_after_fees"] for t in trades) / len(trades)
+    avg_hold = sum(t["held_days"] for t in trades) / len(trades)
+    compounded = 1.0
+    for t in trades:
+        compounded *= (1 + t["return_pct_after_fees"] / 100)
+    return {
+        "ticker": ticker,
+        "trades": len(trades),
+        "win_rate_pct": round(100 * len(wins) / len(trades), 1),
+        "avg_return_pct_after_fees": round(avg_return, 2),
+        "avg_hold_days": round(avg_hold, 1),
+        "compounded_return_pct": round((compounded - 1) * 100, 1),
+        "trade_log": trades[-20:],  # most recent 20, so the payload stays a sane size
+        "caveats": ["No lookahead, but fills assumed at signal-day close, not next-day open.",
+                    "Stop/target frozen at entry, not trailed.",
+                    "Only one position simulated at a time.",
+                    "Foreign-flow confluence unavailable historically — live signals can score slightly higher.",
+                    "Past performance on this specific history is not a guarantee of future results."],
+    }
+
+
 def build_chart_payload(df: pd.DataFrame, reading: Reading, display_bars: int = 140) -> dict:
     """Everything the frontend needs to draw a professional-looking chart:
     recent candles, two moving averages, a trendline (when the data actually

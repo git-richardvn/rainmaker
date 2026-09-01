@@ -40,7 +40,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # Core analysis — shared by the dashboard endpoint and the alert scheduler
 # ---------------------------------------------------------------------------
 
-def analyze_ticker(ticker: str, held: Optional[dict] = None) -> Optional[dict]:
+def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Optional[dict] = None) -> Optional[dict]:
     try:
         df = ds.get_history(ticker)
     except Exception as e:  # noqa: BLE001
@@ -49,14 +49,34 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None) -> Optional[dict]:
             "message": f"Couldn't fetch price data for {ticker} right now.",
             "detail": str(e),
         }
-    # Foreign net-flow is a "nice to have" extra call — only spend the request
-    # budget on it for tickers actually held, not the whole watchlist scan.
+    # Foreign net-flow, insider trades, upcoming events, and news are all
+    # "nice to have" extra calls — only spend the request budget on them for
+    # tickers actually held, not the whole watchlist scan.
     foreign_net = ds.get_foreign_net_today(ticker) if held else None
     reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
     rec = engine.recommend(reading, held=held)
     if rec is None:
         return None
-    return {
+
+    # --- circuit breaker: pause NEW buys after a bad stretch (never touches exits/holds) ---
+    if not held and rec.action == "buy" and circuit_breaker and circuit_breaker.get("paused"):
+        rec.action, rec.action_label = "watch", "Buys paused — recent losses"
+        rec.why = circuit_breaker["reason"]
+        rec.heads_up = None
+        rec.basis_tags.append("circuit-breaker-paused")
+
+    # --- position-size suggestion for a live buy (greedy-but-disciplined sizing, KB 4.6/13) ---
+    suggested_qty = None
+    risk_amount = None
+    if not held and rec.action == "buy" and rec.entry and rec.stop:
+        settings = store.get_settings()
+        if settings.get("account_size"):
+            per_share_risk = rec.entry - rec.stop
+            if per_share_risk > 0:
+                risk_amount = round(settings["account_size"] * settings["risk_per_trade_pct"] / 100, 0)
+                suggested_qty = int(risk_amount // per_share_risk)
+
+    out = {
         "ticker": rec.ticker,
         "action": rec.action,
         "action_label": rec.action_label,
@@ -76,7 +96,14 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None) -> Optional[dict]:
         "held_days": rec.held_days,
         "exit_alert": rec.exit_alert,
         "exit_reason": rec.exit_reason,
+        "suggested_qty": suggested_qty,
+        "risk_amount": risk_amount,
     }
+    if held:
+        out["insider"] = ds.get_insider_trading(ticker)
+        out["upcoming_event"] = ds.get_upcoming_events(ticker)
+        out["news"] = ds.get_recent_news(ticker)
+    return out
 
 
 def market_status() -> dict:
@@ -121,6 +148,7 @@ def portfolio_vs_market() -> dict:
 def build_dashboard() -> dict:
     positions = store.list_positions()
     held_map = {p["ticker"]: p for p in positions}
+    circuit_breaker = store.trading_circuit_breaker()
 
     portfolio_cards = []
     for p in positions:
@@ -146,18 +174,20 @@ def build_dashboard() -> dict:
     for t in watch_candidates:
         if t in held_map:
             continue
-        card = analyze_ticker(t, held=None)
+        card = analyze_ticker(t, held=None, circuit_breaker=circuit_breaker)
         if card and not card.get("error"):
             watchlist_cards.append(card)
 
     rank_order = {"buy": 0, "watch": 1}
     watchlist_cards.sort(key=lambda c: (rank_order.get(c["action"], 9), c["confidence"] != "high"))
-    watchlist_cards = watchlist_cards[:6]
+    watchlist_cards = watchlist_cards[:8]
 
     return {
         "generated_at": datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M"),
         "market_status": market_status(),
         "benchmark": portfolio_vs_market(),
+        "circuit_breaker": circuit_breaker,
+        "settings": store.get_settings(),
         "portfolio": portfolio_cards,
         "watchlist": watchlist_cards,
         "alerts": store.list_alerts(today_only=True),
@@ -179,6 +209,16 @@ class WatchTicker(BaseModel):
     ticker: str
 
 
+class SettingsUpdate(BaseModel):
+    account_size: Optional[float] = None
+    risk_per_trade_pct: Optional[float] = None
+
+
+class ClosePosition(BaseModel):
+    exit_price: float
+    exit_date: Optional[str] = None
+
+
 @app.get("/api/dashboard")
 def get_dashboard():
     try:
@@ -195,10 +235,39 @@ def post_position(pos: NewPosition):
 
 @app.delete("/api/portfolio/{position_id}")
 def delete_position(position_id: str):
+    """Removes a position WITHOUT logging a trade — for correcting a mistaken
+    entry, not for closing a real trade. Use /close for an actual exit, since
+    that's what feeds the trade journal and the circuit breaker."""
     ok = store.remove_position(position_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Position not found")
     return {"ok": True}
+
+
+@app.post("/api/portfolio/{position_id}/close")
+def close_position(position_id: str, body: ClosePosition):
+    """Closes a real trade at the given exit price and logs it to the trade
+    journal — this is what powers the circuit breaker (store.trading_circuit_breaker)
+    and any future realized win-rate reporting (KB Section 13)."""
+    trade = store.close_position(position_id, body.exit_price, body.exit_date)
+    if trade is None:
+        raise HTTPException(status_code=404, detail="Position not found")
+    return trade
+
+
+@app.get("/api/trades")
+def get_trades():
+    return {"trades": store.list_closed_trades(), "circuit_breaker": store.trading_circuit_breaker()}
+
+
+@app.get("/api/settings")
+def get_settings():
+    return store.get_settings()
+
+
+@app.post("/api/settings")
+def post_settings(s: SettingsUpdate):
+    return store.save_settings(s.account_size, s.risk_per_trade_pct)
 
 
 @app.post("/api/watchlist")
@@ -258,6 +327,20 @@ def get_chart(ticker: str):
         "held": held,
         **chart,
     }
+
+
+@app.get("/api/backtest/{ticker}")
+def get_backtest(ticker: str):
+    """Runs the engine's current rules (KB Section 13's answer to 'does this
+    actually work') against this ticker's available price history — a
+    measured, honest substitute for a guessed win rate. See engine.backtest's
+    docstring for the simplifications this walk-forward simulation makes."""
+    ticker = ticker.upper().strip()
+    try:
+        df = ds.get_history(ticker, days=1500)  # ask for as much history as the source will give
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Couldn't fetch history for {ticker}: {e}")
+    return engine.backtest(df, ticker=ticker)
 
 
 @app.get("/api/backup")
