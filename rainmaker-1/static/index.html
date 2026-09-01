@@ -467,7 +467,7 @@ async function load(){
   _loadInFlight = true;
   let res, d;
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 110000);  // longer than a worst-case full scan, so this only fires on a genuine hang
+  const timeoutId = setTimeout(() => controller.abort(), 175000);  // 18 tickers at 12 calls/60s can need ~120s of throttle time alone; 175s gives real headroom so this only fires on a genuine hang
   try {
     try {
       res = await fetch('/api/dashboard', { signal: controller.signal });
