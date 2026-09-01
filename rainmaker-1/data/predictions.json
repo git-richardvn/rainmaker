@@ -1,0 +1,18 @@
+[
+  {
+    "id": "fe42a9e4",
+    "ticker": "PLX",
+    "date_made": "2026-09-01",
+    "eval_date": "2026-09-15",
+    "entry": 397940.0,
+    "stop": 299970.0,
+    "target": 437734.0,
+    "basis_tags": [
+      "4.9-breakout-with-conviction"
+    ],
+    "evaluated": false,
+    "correct": null,
+    "outcome": null,
+    "eval_price": null
+  }
+]
