@@ -91,6 +91,14 @@ def get_history(symbol: str, days: int = 260) -> pd.DataFrame:
             if df is None or len(df) == 0:
                 raise ValueError("empty response")
             df = _normalize(df)
+            if symbol != VNINDEX_SYMBOL:
+                # vnstock reports individual-stock OHLC in thousands of VND
+                # (e.g. 73 means 73,000₫) — convert to actual VND here, once,
+                # so every downstream number (P/L, stop/target, display) is
+                # in real currency and never silently off by 1000x. The
+                # index itself is already in points, not currency — leave it.
+                for col in ("open", "high", "low", "close"):
+                    df[col] = df[col] * 1000
             _HISTORY_CACHE[symbol] = (now, df)
             return df
         except (Exception, SystemExit) as e:  # noqa: BLE001 — vnstock's rate limiter uses sys.exit()
