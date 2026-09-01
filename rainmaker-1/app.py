@@ -300,7 +300,7 @@ def build_dashboard() -> dict:
 # ---------------------------------------------------------------------------
 
 _cache_cond = threading.Condition()
-_cache_state = {"building": False, "data": None, "error": None, "ts": 0.0}
+_cache_state = {"building": False, "data": None, "error": None, "ts": 0.0, "generation": 0}
 
 
 def _refresh_cache() -> dict:
@@ -308,14 +308,24 @@ def _refresh_cache() -> dict:
     at once — an overlapping caller (a manual refresh while the scheduled
     scan is already running, or two people loading the page at once) just
     waits for the in-flight scan's result instead of starting a redundant
-    one that would compete for the same rate-limit budget."""
+    one that would compete for the same rate-limit budget.
+
+    This used to give up after a fixed 280s wait and start its own second
+    scan if the first one was still running — harmless for the old ~18-ticker
+    universe (which never took that long), but the twice-daily whole-market
+    scan legitimately can run past 280s, and that fallback was firing for
+    real, doubling the rate-limit load and making everything slower for
+    everyone. A generation counter fixes it: wait however long the in-flight
+    scan actually takes, then use its result if it finished after we started
+    waiting — no timeout, no duplicate scan."""
     with _cache_cond:
-        if _cache_state["building"]:
-            _cache_cond.wait(timeout=280)
-            if _cache_state["data"] is not None and not _cache_state["building"]:
-                return _cache_state["data"]
+        start_gen = _cache_state["generation"]
+        while _cache_state["building"]:
+            _cache_cond.wait(timeout=60)
+        if _cache_state["generation"] > start_gen:
             if _cache_state["error"] is not None:
                 raise RuntimeError(_cache_state["error"])
+            return _cache_state["data"]
         _cache_state["building"] = True
         _cache_state["error"] = None
 
@@ -323,12 +333,15 @@ def _refresh_cache() -> dict:
         data = build_dashboard()
         with _cache_cond:
             _cache_state["data"] = data
+            _cache_state["error"] = None
             _cache_state["ts"] = time.time()
+            _cache_state["generation"] += 1
         return data
     except Exception as e:  # noqa: BLE001
         log.exception("scan failed")
         with _cache_cond:
             _cache_state["error"] = str(e)
+            _cache_state["generation"] += 1
         raise
     finally:
         with _cache_cond:

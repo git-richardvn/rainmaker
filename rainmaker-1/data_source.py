@@ -23,11 +23,16 @@ _FOREIGN_CACHE: dict[str, tuple[float, Optional[float]]] = {}
 _CACHE_TTL_SECONDS = 600  # don't hammer the free source; a 10-minute-old bar is fine for this use case
 
 # vnstock's free/guest tier caps requests at 20/minute and kills the whole
-# process with SystemExit when that's exceeded. Stay well under that with a
-# simple sliding-window throttle shared by every call this app makes.
+# process with SystemExit when that's exceeded. Every scan in this app (cold
+# boot, the light 15-min refresh, the twice-daily whole-market scan) queues
+# through this one shared throttle, so its ceiling is the single biggest
+# lever on how fast the app feels — 16/60s keeps a 20% safety margin below
+# vnstock's real 20/min cutoff (raised from a more conservative 12 that left
+# a third of the real quota unused) while still degrading gracefully via the
+# existing SystemExit handling if the two rate windows ever briefly misalign.
 _RATE_LOCK = threading.Lock()
 _RATE_WINDOW_SECONDS = 60
-_RATE_MAX_CALLS = 12
+_RATE_MAX_CALLS = 16
 _call_times: deque[float] = deque()
 
 
