@@ -107,6 +107,13 @@
   .card.buy::before{ background:var(--gain); box-shadow:0 0 12px 1px var(--gain-soft); }
   .card.sell::before{ background:var(--loss); box-shadow:0 0 12px 1px var(--loss-soft); }
   .card.trim::before, .card.hold::before, .card.watch::before{ background:var(--watch); box-shadow:0 0 12px 1px var(--watch-soft); }
+  .card.exit-alert{ background:rgba(255,109,130,0.07); }
+  .card.exit-alert::before{ width:4px; background:var(--loss); box-shadow:0 0 16px 2px var(--loss-soft); }
+  .exit-banner{ display:flex; align-items:center; gap:7px; font-size:11.5px; font-weight:700; letter-spacing:0.03em;
+    text-transform:uppercase; color:var(--loss); background:var(--loss-soft); border:1px solid rgba(255,109,130,0.35);
+    border-radius:8px; padding:6px 11px; }
+  .hold-meta{ font-size:10.5px; color:var(--text-faint); display:flex; gap:10px; flex-wrap:wrap; }
+  .hold-meta b{ color:var(--text-muted); font-weight:600; }
 
   .card-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .ticker-block{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
@@ -286,8 +293,14 @@ function cardHTML(c, held){
       <span>Aim for<b>${fmtVND(c.target)}</b></span>
     </div>`;
   }
+  const holdMeta = held ? `<div class="hold-meta">
+      ${c.conviction ? `<span>Conviction: <b>${c.conviction}</b></span>`:''}
+      ${c.held_days!=null ? `<span>Held <b>${c.held_days}d</b> of ${c.max_hold_days}d limit</span>`:''}
+    </div>` : '';
+  const exitBanner = c.exit_alert ? `<div class="exit-banner">⚠ Exit now — ${c.exit_reason || c.action_label}</div>` : '';
   return `
-    <div class="card ${cls}" onclick="openChart('${c.ticker}')">
+    <div class="card ${cls}${c.exit_alert ? ' exit-alert' : ''}" onclick="openChart('${c.ticker}')">
+      ${exitBanner}
       <div class="card-top">
         <div class="ticker-block">
           <span class="ticker">${c.ticker}</span>
@@ -299,6 +312,7 @@ function cardHTML(c, held){
       <div class="why">${c.why}</div>
       ${c.heads_up ? `<div class="heads-up">${c.heads_up}</div>` : ''}
       ${numbers}
+      ${holdMeta}
       <div class="conf"><span><b>${c.confidence}</b> confidence</span>${held ? `<button class="remove-link" onclick="event.stopPropagation(); removePosition('${c.position_id}')">Remove</button>`:''}</div>
     </div>`;
 }
@@ -336,8 +350,9 @@ async function load(){
   document.getElementById('heroBody').innerHTML = heroHTML(d.benchmark);
 
   const pf = d.portfolio;
+  const exitCount = pf.filter(c=>c.exit_alert).length;
   document.getElementById('portfolioCount').textContent =
-    pf.length ? `${pf.length} holding${pf.length>1?'s':''} · ${pf.filter(c=>['sell','trim'].includes(c.action)).length} need a decision` : '';
+    pf.length ? `${pf.length} holding${pf.length>1?'s':''}${exitCount ? ` · ${exitCount} EXIT NOW` : ` · ${pf.filter(c=>['sell','trim'].includes(c.action)).length} need a decision`}` : '';
   document.getElementById('portfolioList').innerHTML =
     pf.length ? pf.map(c => c.error ? `<div class="empty">${c.message}</div>` : cardHTML(c, true)).join('')
                : `<div class="empty">No positions yet — tap "+ Add position" to start tracking your portfolio.</div>`;
@@ -419,6 +434,7 @@ function renderChart(d){
       <span class="chg ${chgCls} mono">${fmtPct(d.change_pct)}</span>
       <span class="badge ${cls}">${d.action_label}</span>
     </div>
+    ${d.exit_alert ? `<div class="exit-banner">⚠ Exit now — ${d.exit_reason || d.action_label}</div>` : ''}
     <div class="why">${d.why}</div>
     ${d.heads_up ? `<div class="heads-up">${d.heads_up}</div>` : ''}
     <div class="numbers">
@@ -426,6 +442,10 @@ function renderChart(d){
       <span>Stop loss<b style="color:var(--loss)">${fmtVND(d.stop)}</b></span>
       <span>Take profit<b style="color:var(--gain)">${fmtVND(d.target)}</b></span>
       ${d.reward_risk != null ? `<span>Reward : risk<b>${d.reward_risk} : 1</b></span>` : ''}
+    </div>
+    <div class="hold-meta">
+      ${d.conviction ? `<span>Conviction: <b>${d.conviction}</b></span>`:''}
+      ${d.held_days!=null ? `<span>Held <b>${d.held_days}d</b> of ${d.max_hold_days}d limit</span>`:''}
     </div>
     <div class="chart-canvas" id="chartCanvas"></div>
     <div class="chart-legend">
