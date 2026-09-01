@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Optional
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +25,7 @@ from pydantic import BaseModel
 
 import data_source as ds
 import engine
+import gh_sync
 import store
 import notify
 
@@ -40,7 +42,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 # Core analysis — shared by the dashboard endpoint and the alert scheduler
 # ---------------------------------------------------------------------------
 
-def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Optional[dict] = None) -> Optional[dict]:
+def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Optional[dict] = None,
+                    strict: bool = False) -> Optional[dict]:
     try:
         df = ds.get_history(ticker)
     except Exception as e:  # noqa: BLE001
@@ -54,7 +57,7 @@ def analyze_ticker(ticker: str, held: Optional[dict] = None, circuit_breaker: Op
     # tickers actually held, not the whole watchlist scan.
     foreign_net = ds.get_foreign_net_today(ticker) if held else None
     reading = engine.build_reading(ticker, df, foreign_net_today=foreign_net)
-    rec = engine.recommend(reading, held=held)
+    rec = engine.recommend(reading, held=held, strict=strict)
     if rec is None:
         return None
 
@@ -145,10 +148,46 @@ def portfolio_vs_market() -> dict:
     return {"portfolio_pct": portfolio_pct, "market_pct": market_pct, "since": earliest}
 
 
+def _run_prediction_maintenance() -> dict:
+    """Grades any 'buy' predictions whose review window has passed (KB Section
+    14), then checks the resulting correct-rate against Richard's stated 80%
+    bar. If it's fallen below that (with enough graded calls for the number
+    to mean something) and the app isn't already in review mode, this
+    mechanically tightens the confluence requirement for new buys from 2
+    signals to 3 until accuracy recovers — logged as its own alert so
+    Richard can see exactly when and why. This is not a retrain (a
+    rule-based engine has no such thing); it's the same discipline lever
+    already used for high-conviction calls, applied automatically."""
+    for p in store.list_predictions(due_only=True):
+        try:
+            df = ds.get_history(p["ticker"], days=90)
+            future = df[df["time"] >= pd.to_datetime(p["eval_date"])]
+            eval_price = float(future["close"].iloc[0]) if len(future) else float(df["close"].iloc[-1])
+            store.grade_prediction(p["id"], eval_price)
+        except Exception:  # noqa: BLE001
+            continue  # try again next cycle rather than let one bad fetch break the whole dashboard
+
+    acc = store.prediction_accuracy()
+    review = store.get_review_mode()
+    if acc["needs_review"] and not review["active"]:
+        reason = (f"Prediction accuracy fell to {acc['overall_accuracy_pct']}% across {acc['overall_evaluated']} "
+                  f"graded calls — below your {acc['accuracy_target_pct']}% bar. Requiring 3 confirming signals "
+                  "instead of 2 on new buys until accuracy recovers.")
+        store.set_review_mode(True, reason)
+        store.log_alert({"label": "Accuracy review triggered", "summary": reason})
+    elif review["active"] and acc["overall_accuracy_pct"] is not None and acc["overall_accuracy_pct"] >= acc["accuracy_target_pct"]:
+        store.set_review_mode(False, None)
+        store.log_alert({"label": "Accuracy recovered", "summary":
+                          f"Accuracy back to {acc['overall_accuracy_pct']}% — confluence bar returned to normal."})
+    return acc
+
+
 def build_dashboard() -> dict:
     positions = store.list_positions()
     held_map = {p["ticker"]: p for p in positions}
     circuit_breaker = store.trading_circuit_breaker()
+    accuracy = _run_prediction_maintenance()
+    review = store.get_review_mode()
 
     portfolio_cards = []
     for p in positions:
@@ -174,13 +213,28 @@ def build_dashboard() -> dict:
     for t in watch_candidates:
         if t in held_map:
             continue
-        card = analyze_ticker(t, held=None, circuit_breaker=circuit_breaker)
+        card = analyze_ticker(t, held=None, circuit_breaker=circuit_breaker, strict=review["active"])
         if card and not card.get("error"):
             watchlist_cards.append(card)
 
     rank_order = {"buy": 0, "watch": 1}
     watchlist_cards.sort(key=lambda c: (rank_order.get(c["action"], 9), c["confidence"] != "high"))
-    watchlist_cards = watchlist_cards[:8]
+    watchlist_cards = watchlist_cards[:10]  # Richard asked for at least 10 recommended tickers at a time
+
+    # Log a directional prediction for every fresh "buy" call, so its outcome
+    # can be graded once its review window passes (store.log_prediction skips
+    # tickers that already have an outstanding, ungraded call).
+    for c in watchlist_cards:
+        if c["action"] == "buy" and c.get("entry") and c.get("stop") and c.get("target"):
+            store.log_prediction(c["ticker"], c["entry"], c["stop"], c["target"], c.get("basis_tags", []))
+
+    # Equity snapshot for the 2-week target tracker: realized P/L is exact
+    # (from the trade journal), unrealized is live prices on open positions.
+    unrealized = sum((c["price"] - c["entry_price"]) * c["qty"] for c in portfolio_cards if not c.get("error"))
+    store.record_equity_point(store.cumulative_realized_pnl_vnd(), unrealized)
+    period_progress = store.get_period_progress()
+    buy_candidates = [c for c in watchlist_cards if c["action"] == "buy"]
+    strategic_plan = engine.build_strategic_plan(period_progress, buy_candidates, circuit_breaker)
 
     return {
         "generated_at": datetime.now(VN_TZ).strftime("%Y-%m-%d %H:%M"),
@@ -188,9 +242,14 @@ def build_dashboard() -> dict:
         "benchmark": portfolio_vs_market(),
         "circuit_breaker": circuit_breaker,
         "settings": store.get_settings(),
+        "gh_sync_enabled": gh_sync.enabled(),
         "portfolio": portfolio_cards,
         "watchlist": watchlist_cards,
         "alerts": store.list_alerts(today_only=True),
+        "period_progress": period_progress,
+        "strategic_plan": strategic_plan,
+        "prediction_accuracy": accuracy,
+        "review_mode": review,
     }
 
 
@@ -212,6 +271,9 @@ class WatchTicker(BaseModel):
 class SettingsUpdate(BaseModel):
     account_size: Optional[float] = None
     risk_per_trade_pct: Optional[float] = None
+    monthly_target_pct: Optional[float] = None
+    accuracy_target_pct: Optional[float] = None
+    prediction_eval_days: Optional[int] = None
 
 
 class ClosePosition(BaseModel):
@@ -267,7 +329,33 @@ def get_settings():
 
 @app.post("/api/settings")
 def post_settings(s: SettingsUpdate):
-    return store.save_settings(s.account_size, s.risk_per_trade_pct)
+    return store.save_settings(s.account_size, s.risk_per_trade_pct, s.monthly_target_pct,
+                                s.accuracy_target_pct, s.prediction_eval_days)
+
+
+@app.get("/api/target")
+def get_target():
+    """The 2-week profit-target tracker on its own, without re-running the
+    full (throttled, slow) watchlist scan — /api/dashboard already returns
+    the same period_progress/strategic_plan alongside live buy candidates on
+    every load; this endpoint is for checking the number by itself."""
+    period = store.get_period_progress()
+    circuit_breaker = store.trading_circuit_breaker()
+    plan = engine.build_strategic_plan(period, [], circuit_breaker)
+    return {"period_progress": period, "strategic_plan": plan}
+
+
+@app.get("/api/predictions")
+def get_predictions():
+    """Every buy call the app has made, whether it's been graded yet, and the
+    resulting correct-rate — overall and per-ticker — against Richard's
+    stated 80% bar (KB Section 14). This is the honest, measured answer to
+    'is this app actually working', not a guessed number."""
+    return {
+        "predictions": store.list_predictions(),
+        "accuracy": store.prediction_accuracy(),
+        "review_mode": store.get_review_mode(),
+    }
 
 
 @app.post("/api/watchlist")

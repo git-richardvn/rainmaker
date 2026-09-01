@@ -287,13 +287,22 @@ def is_high_conviction(reading: Reading) -> bool:
     return _confluence_score(reading) >= MIN_CONFLUENCE_FOR_HIGH_CONVICTION
 
 
-def _apply_short_term_policy(rec: Recommendation, reading: Reading, held: Optional[dict]) -> Recommendation:
+def _apply_short_term_policy(rec: Recommendation, reading: Reading, held: Optional[dict],
+                              strict: bool = False) -> Recommendation:
     """Layers Richard's short-term mandate on top of a raw judgment: caps (or
     extends) the holding window, blocks new trades whose edge is too thin to
     clear round-trip fees, enforces a time-stop independent of price, and sets
     an unambiguous exit_alert flag the notification system can act on without
     re-deriving it. Applied as the last step for every path, so nothing
-    downstream can accidentally skip it."""
+    downstream can accidentally skip it.
+
+    strict=True raises the confluence bar for new buys from 2 signals to 3 —
+    this is the mechanical response when the app's own prediction accuracy
+    (KB Section 14) has fallen below Richard's stated 80% target: not an ML
+    retrain (a rule-based price/volume engine has no such thing to retrain),
+    but a real, auditable tightening of the same discipline lever already
+    used for high-conviction calls, applied automatically until accuracy
+    recovers."""
     high_conviction = is_high_conviction(reading)
     rec.conviction = "high-conviction (up to ~3 months)" if high_conviction else "standard (1-2 months)"
     rec.max_hold_days = HIGH_CONVICTION_MAX_HOLD_DAYS if high_conviction else DEFAULT_MAX_HOLD_DAYS
@@ -313,13 +322,17 @@ def _apply_short_term_policy(rec: Recommendation, reading: Reading, held: Option
     # Richard asked to "focus on the sure win tickers" rather than trade often — this
     # requires at least a couple of independent signals to agree before a buy goes out,
     # not just one (e.g. a breakout alone, with nothing else confirming it).
-    if not held and rec.action == "buy" and _confluence_score(reading) < MIN_CONFLUENCE_FOR_NEW_TRADE:
+    min_confluence = MIN_CONFLUENCE_FOR_HIGH_CONVICTION if strict else MIN_CONFLUENCE_FOR_NEW_TRADE
+    if not held and rec.action == "buy" and _confluence_score(reading) < min_confluence:
         rec.action, rec.action_label = "watch", "Not enough confirmation yet"
-        rec.why = ("Only one signal is present here — not enough independent confirmation to call this a "
-                   "high-quality setup worth paying trading fees for. Waiting for a second confirming signal "
-                   "(trend, volume, money flow, or foreign buying) before treating this as a buy.")
+        rec.why = (f"Only {_confluence_score(reading)} of {min_confluence} required signals are present here — "
+                   "not enough independent confirmation to call this a high-quality setup worth paying trading "
+                   "fees for. Waiting for another confirming signal (trend, volume, money flow, or foreign "
+                   "buying) before treating this as a buy."
+                   + (" The bar is temporarily raised while the app reviews its recent prediction accuracy."
+                      if strict else ""))
         rec.heads_up = None
-        rec.basis_tags.append("confluence-too-thin")
+        rec.basis_tags.append("confluence-too-thin-strict-review" if strict else "confluence-too-thin")
 
     # --- time-stop: the 1-2 (up to 3) month rule, independent of price action ---
     if held and held.get("entry_date"):
@@ -352,11 +365,11 @@ def _apply_short_term_policy(rec: Recommendation, reading: Reading, held: Option
     return rec
 
 
-def recommend(reading: Reading, held: Optional[dict] = None) -> Optional[Recommendation]:
+def recommend(reading: Reading, held: Optional[dict] = None, strict: bool = False) -> Optional[Recommendation]:
     rec = _recommend_core(reading, held)
     if rec is None:
         return None
-    return _apply_short_term_policy(rec, reading, held)
+    return _apply_short_term_policy(rec, reading, held, strict=strict)
 
 
 def _recommend_core(reading: Reading, held: Optional[dict] = None) -> Optional[Recommendation]:
@@ -693,6 +706,60 @@ def backtest(df: pd.DataFrame, ticker: str = "BACKTEST") -> dict:
                     "Foreign-flow confluence unavailable historically — live signals can score slightly higher.",
                     "Past performance on this specific history is not a guarantee of future results."],
     }
+
+
+def build_strategic_plan(period: dict, buy_candidates: list, circuit_breaker: dict) -> dict:
+    """Turns store.get_period_progress()'s raw numbers into the plain-English
+    'are we on track for the 2-week target, and what should I actually do
+    about it' plan Richard asked for. Every sentence here is templated from
+    numbers already computed elsewhere (KB 4.7's no-fabrication rule) — this
+    function invents no signal of its own; it narrates the period-progress
+    figures and the already-ranked, already-filtered buy candidates."""
+    if period.get("account_size") is None:
+        return {"summary": "Set your account size in Settings (⚙︎) first — the target and this plan are calculated against it.",
+                "lines": [], "pace": "unconfigured"}
+
+    target_pct = period["target_pct"]
+    actual_pct = period["actual_pct"] if period["actual_pct"] is not None else 0.0
+    days_remaining = period["days_remaining"]
+    days_total = period["days_total"]
+    gap_pct = period["gap_pct"] if period["gap_pct"] is not None else round(target_pct - actual_pct, 2)
+
+    lines: list[str] = []
+    if actual_pct >= target_pct:
+        pace = "ahead"
+        lines.append(f"You're at {actual_pct:+.1f}% for this period against a {target_pct:.1f}% target, with "
+                      f"{days_remaining} of {days_total} days left — already ahead. The discipline that got you "
+                      "here (confluence + fee filters) is worth protecting, not abandoning for bigger swings just "
+                      "because there's room to spare.")
+    elif days_remaining <= 0:
+        pace = "period_over"
+        lines.append(f"This period closed at {actual_pct:+.1f}% against a {target_pct:.1f}% target "
+                      f"({'met or beat it' if gap_pct <= 0 else f'short by {gap_pct:.1f} points'}). "
+                      "A new period has just started — the target above already reflects it.")
+    else:
+        pace = "behind" if gap_pct > 0 else "on_track"
+        lines.append(f"You're at {actual_pct:+.1f}% for this period against a {target_pct:.1f}% target, with "
+                      f"{days_remaining} of {days_total} days left — {gap_pct:+.1f} points to go.")
+        if gap_pct > 0:
+            lines.append("Closing that gap by forcing bigger or more frequent trades is exactly the failure mode "
+                          "the confluence and fee-aware filters exist to prevent — the plan below is which "
+                          "already-qualified setups to act on, not a reason to lower the bar.")
+
+    if circuit_breaker.get("paused"):
+        lines.append(f"Heads up: new buys are currently paused — {circuit_breaker['reason']} Closing out a "
+                      "stalled or losing position deliberately, rather than forcing a new trade to chase the "
+                      "target, is the disciplined move here.")
+    elif buy_candidates:
+        top = buy_candidates[:3]
+        names = ", ".join(c["ticker"] for c in top)
+        lines.append(f"Highest-confluence buy candidates clearing every filter right now: {names}. See the "
+                      "watchlist below for entry/stop/target and suggested size on each.")
+    else:
+        lines.append("No candidates are currently clearing the confluence and fee-aware filters — that's the "
+                      "discipline working as intended, not a gap that needs filling with a weaker setup.")
+
+    return {"summary": lines[0], "lines": lines, "pace": pace, "gap_pct": gap_pct}
 
 
 def build_chart_payload(df: pd.DataFrame, reading: Reading, display_bars: int = 140) -> dict:
