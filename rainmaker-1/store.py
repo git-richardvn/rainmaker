@@ -92,7 +92,7 @@ def _write(path: str, data: list):
     with _LOCK:
         with open(path, "w") as fh:
             json.dump(data, fh, indent=2, default=str)
-    gh_sync.push(os.path.basename(path), data)  # best-effort, outside the lock — network latency shouldn't block other requests
+    _push_to_github_async(path, data)
 
 
 def _read_obj(path: str, default: dict) -> dict:
@@ -110,7 +110,23 @@ def _write_obj(path: str, data: dict):
     with _LOCK:
         with open(path, "w") as fh:
             json.dump(data, fh, indent=2, default=str)
-    gh_sync.push(os.path.basename(path), data)
+    _push_to_github_async(path, data)
+
+
+def _push_to_github_async(path: str, data) -> None:
+    """Fires the GitHub commit in a background thread instead of blocking the
+    request that triggered the write. This matters: a dashboard load can
+    write several files in one go (an equity snapshot, several new
+    predictions), and each GitHub commit is its own network round trip that
+    can occasionally stall or hit a transient failure — doing them
+    synchronously was pushing some requests past Render's own proxy timeout,
+    which showed up to Richard as the whole app silently hanging on
+    'Loading...' forever. The local file is already written and is the
+    source of truth for the running process either way; this thread is
+    strictly belt-and-suspenders for the next restart."""
+    if not gh_sync.enabled():
+        return
+    threading.Thread(target=gh_sync.push, args=(os.path.basename(path), data), daemon=True).start()
 
 
 def gh_sync_enabled() -> bool:
