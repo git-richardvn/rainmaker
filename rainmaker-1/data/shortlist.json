@@ -1,18 +1,158 @@
 {
-  "generated_at": "2026-09-02 03:23",
+  "generated_at": "2026-09-02 12:14",
   "cards": [
     {
-      "ticker": "HPG",
+      "ticker": "EVE",
+      "action": "buy",
+      "action_label": "Good time to add",
+      "why": "The price just broke through a key ceiling on 2.6\u00d7 normal trading volume, which usually means bigger buyers are stepping in.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 8890.0,
+      "change_pct": 4.47,
+      "entry": 8890.0,
+      "stop": 8300.0,
+      "target": 9779.0,
+      "reward_risk": 1.5,
+      "basis_tags": [
+        "4.9-breakout-with-conviction"
+      ],
+      "bars": 307,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "ADG",
+      "action": "buy",
+      "action_label": "Good time to add",
+      "why": "The price just broke through a key ceiling on 7.0\u00d7 normal trading volume, which usually means bigger buyers are stepping in.",
+      "heads_up": null,
+      "confidence": "medium",
+      "price": 500.0,
+      "change_pct": 19.05,
+      "entry": 500.0,
+      "stop": 270.0,
+      "target": 550.0,
+      "reward_risk": 0.2,
+      "basis_tags": [
+        "4.9-breakout-with-conviction"
+      ],
+      "bars": 115,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "ADS",
+      "action": "watch",
+      "action_label": "Worth watching",
+      "why": "Pulled back to a level that's held before, and the overall trend is still healthy.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 8180.0,
+      "change_pct": 0.74,
+      "entry": null,
+      "stop": 7771.0,
+      "target": 8998.0,
+      "reward_risk": 2.0,
+      "basis_tags": [
+        "6-pullback-entry"
+      ],
+      "bars": 307,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "BCE",
+      "action": "watch",
+      "action_label": "Worth watching",
+      "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 32509.999999999996,
+      "change_pct": -0.52,
+      "entry": null,
+      "stop": 30860.0,
+      "target": 35761.0,
+      "reward_risk": 2.0,
+      "basis_tags": [
+        "4.9-accumulation"
+      ],
+      "bars": 293,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "CTR",
+      "action": "watch",
+      "action_label": "Worth watching",
+      "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 77000.0,
+      "change_pct": 0.0,
+      "entry": null,
+      "stop": 73150.0,
+      "target": 84700.0,
+      "reward_risk": 2.0,
+      "basis_tags": [
+        "4.9-accumulation"
+      ],
+      "bars": 307,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "DBD",
+      "action": "watch",
+      "action_label": "Worth watching",
+      "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 48250.0,
+      "change_pct": 0.21,
+      "entry": null,
+      "stop": 45838.0,
+      "target": 53075.0,
+      "reward_risk": 2.0,
+      "basis_tags": [
+        "4.9-accumulation"
+      ],
+      "bars": 307,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "DVP",
+      "action": "watch",
+      "action_label": "Worth watching",
+      "why": "Pulled back to a level that's held before, and the overall trend is still healthy.",
+      "heads_up": null,
+      "confidence": "high",
+      "price": 76800.0,
+      "change_pct": 0.26,
+      "entry": null,
+      "stop": 72960.0,
+      "target": 84480.0,
+      "reward_risk": 2.0,
+      "basis_tags": [
+        "6-pullback-entry"
+      ],
+      "bars": 307,
+      "conviction": "standard (1-2 months)",
+      "max_hold_days": 60
+    },
+    {
+      "ticker": "AAA",
       "action": "watch",
       "action_label": "Avoid for now",
       "why": "This is in a clear downtrend with no sign of big buyers stepping in \u2014 not a place to open a new position.",
       "heads_up": null,
       "confidence": "high",
-      "price": 22100.0,
-      "change_pct": -0.45,
+      "price": 7030.0,
+      "change_pct": -0.71,
       "entry": null,
-      "stop": 20995.0,
-      "target": 24310.0,
+      "stop": 6678.0,
+      "target": 7733.0,
       "reward_risk": 2.0,
       "basis_tags": [
         "chart-lookup-fallback"
@@ -22,17 +162,17 @@
       "max_hold_days": 60
     },
     {
-      "ticker": "CTG",
+      "ticker": "ABT",
       "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
+      "action_label": "Avoid for now",
+      "why": "This is in a clear downtrend with no sign of big buyers stepping in \u2014 not a place to open a new position.",
       "heads_up": null,
       "confidence": "high",
-      "price": 31950.0,
-      "change_pct": 0.16,
+      "price": 50800.0,
+      "change_pct": -1.17,
       "entry": null,
-      "stop": 30352.0,
-      "target": 35145.0,
+      "stop": 48260.0,
+      "target": 55880.0,
       "reward_risk": 2.0,
       "basis_tags": [
         "chart-lookup-fallback"
@@ -42,102 +182,22 @@
       "max_hold_days": 60
     },
     {
-      "ticker": "VCB",
+      "ticker": "ACB",
       "action": "watch",
       "action_label": "No strong signal",
       "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
       "heads_up": null,
       "confidence": "high",
-      "price": 60100.0,
-      "change_pct": 0.0,
+      "price": 22650.0,
+      "change_pct": 0.22,
       "entry": null,
-      "stop": 57095.0,
-      "target": 66110.0,
+      "stop": 21518.0,
+      "target": 24915.0,
       "reward_risk": 2.0,
       "basis_tags": [
         "chart-lookup-fallback"
       ],
       "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "MWG",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 75000.0,
-      "change_pct": -1.19,
-      "entry": null,
-      "stop": 71000.0,
-      "target": 82500.0,
-      "reward_risk": 1.9,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "MSN",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 70200.0,
-      "change_pct": 0.0,
-      "entry": null,
-      "stop": 66300.0,
-      "target": 77220.0,
-      "reward_risk": 1.8,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "MBB",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 21050.0,
-      "change_pct": 0.0,
-      "entry": null,
-      "stop": 19900.0,
-      "target": 23155.0,
-      "reward_risk": 1.8,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "VNM",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 62300000.0,
-      "change_pct": -0.32,
-      "entry": null,
-      "stop": 58600000.0,
-      "target": 68530000.0,
-      "reward_risk": 1.7,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 290,
       "conviction": "standard (1-2 months)",
       "max_hold_days": 60
     },
@@ -163,18 +223,18 @@
       "max_hold_days": 60
     },
     {
-      "ticker": "VHM",
+      "ticker": "AAM",
       "action": "watch",
       "action_label": "Worth watching",
       "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
       "heads_up": null,
       "confidence": "high",
-      "price": 73000.0,
-      "change_pct": -1.08,
+      "price": 7490.0,
+      "change_pct": 1.22,
       "entry": null,
-      "stop": 68200.0,
-      "target": 80300.0,
-      "reward_risk": 1.5,
+      "stop": 6760.0,
+      "target": 8239.0,
+      "reward_risk": 1.0,
       "basis_tags": [
         "4.9-accumulation"
       ],
@@ -183,98 +243,37 @@
       "max_hold_days": 90
     },
     {
-      "ticker": "PLX",
+      "ticker": "HHS",
       "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
+      "action_label": "Worth watching",
+      "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
       "heads_up": null,
       "confidence": "high",
-      "price": 36250.0,
-      "change_pct": -0.41,
+      "price": 11050000.0,
+      "change_pct": 0.91,
       "entry": null,
-      "stop": 33450.0,
-      "target": 39875.0,
-      "reward_risk": 1.3,
+      "stop": 9710000.0,
+      "target": 12155000.0,
+      "reward_risk": 0.8,
       "basis_tags": [
-        "chart-lookup-fallback"
+        "4.9-accumulation"
       ],
-      "bars": 307,
+      "bars": 289,
       "conviction": "standard (1-2 months)",
       "max_hold_days": 60
     },
     {
-      "ticker": "VRE",
+      "ticker": "ACC",
       "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
+      "action_label": "Avoid for now",
+      "why": "This is in a clear downtrend with no sign of big buyers stepping in \u2014 not a place to open a new position.",
       "heads_up": null,
       "confidence": "high",
-      "price": 26100.0,
-      "change_pct": 0.38,
+      "price": 4750.0,
+      "change_pct": 0.64,
       "entry": null,
-      "stop": 23950.0,
-      "target": 28710.0,
-      "reward_risk": 1.2,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "SSI",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 21350.0,
-      "change_pct": -0.23,
-      "entry": null,
-      "stop": 19400.0,
-      "target": 23485.0,
-      "reward_risk": 1.1,
-      "basis_tags": [
-        "chart-lookup-fallback"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "VPB",
-      "action": "watch",
-      "action_label": "Not enough confirmation yet",
-      "why": "Only 0 of 2 required signals are present here \u2014 not enough independent confirmation to call this a high-quality setup worth paying trading fees for. Waiting for another confirming signal (trend, volume, money flow, or foreign buying) before treating this as a buy.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 27800.0,
-      "change_pct": 1.46,
-      "entry": 27800.0,
-      "stop": 24750.0,
-      "target": 30580.0,
-      "reward_risk": 0.9,
-      "basis_tags": [
-        "4.9-breakout-with-conviction",
-        "confluence-too-thin"
-      ],
-      "bars": 307,
-      "conviction": "standard (1-2 months)",
-      "max_hold_days": 60
-    },
-    {
-      "ticker": "TCB",
-      "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
-      "heads_up": null,
-      "confidence": "high",
-      "price": 33400.0,
-      "change_pct": -2.05,
-      "entry": null,
-      "stop": 29200.0,
-      "target": 36740.0,
+      "stop": 4190.0,
+      "target": 5225.0,
       "reward_risk": 0.8,
       "basis_tags": [
         "chart-lookup-fallback"
@@ -284,22 +283,22 @@
       "max_hold_days": 60
     },
     {
-      "ticker": "VIC",
+      "ticker": "HTN",
       "action": "watch",
-      "action_label": "No strong signal",
-      "why": "Price action here is unremarkable right now \u2014 no strong signal either way.",
+      "action_label": "Worth watching",
+      "why": "Big investors appear to be quietly building a position here \u2014 price is calm, but buying volume outweighs selling volume.",
       "heads_up": null,
       "confidence": "high",
-      "price": 236000.0,
+      "price": 9300000.0,
       "change_pct": 0.0,
       "entry": null,
-      "stop": 198000.0,
-      "target": 259600.0,
-      "reward_risk": 0.6,
+      "stop": 6940000.0,
+      "target": 10230000.0,
+      "reward_risk": 0.4,
       "basis_tags": [
-        "chart-lookup-fallback"
+        "4.9-accumulation"
       ],
-      "bars": 307,
+      "bars": 289,
       "conviction": "standard (1-2 months)",
       "max_hold_days": 60
     }
