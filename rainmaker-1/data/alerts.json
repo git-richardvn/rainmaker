@@ -64,5 +64,11 @@
     "date": "2026-09-03",
     "label": "Manual check",
     "summary": "No new buy ideas right now."
+  },
+  {
+    "time": "07:39",
+    "date": "2026-09-04",
+    "label": "Scheduled check",
+    "summary": "NAF: Good time to add"
   }
 ]
