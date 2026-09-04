@@ -46,5 +46,21 @@
     "correct": null,
     "outcome": null,
     "eval_price": null
+  },
+  {
+    "id": "d19058c5",
+    "ticker": "NAF",
+    "date_made": "2026-09-04",
+    "eval_date": "2026-09-18",
+    "entry": 48550.0,
+    "stop": 46122.0,
+    "target": 53405.0,
+    "basis_tags": [
+      "4.9-breakout-with-conviction"
+    ],
+    "evaluated": false,
+    "correct": null,
+    "outcome": null,
+    "eval_price": null
   }
 ]
