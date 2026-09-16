@@ -42,10 +42,10 @@
     "basis_tags": [
       "4.9-breakout-with-conviction"
     ],
-    "evaluated": false,
-    "correct": null,
-    "outcome": null,
-    "eval_price": null
+    "evaluated": true,
+    "correct": true,
+    "outcome": "hit target",
+    "eval_price": 8510.0
   },
   {
     "id": "d19058c5",
