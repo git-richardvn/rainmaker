@@ -78,5 +78,21 @@
     "correct": null,
     "outcome": null,
     "eval_price": null
+  },
+  {
+    "id": "c830eb8e",
+    "ticker": "SSB",
+    "date_made": "2026-09-16",
+    "eval_date": "2026-09-30",
+    "entry": 22350.0,
+    "stop": 15050.0,
+    "target": 24585.0,
+    "basis_tags": [
+      "4.9-breakout-with-conviction"
+    ],
+    "evaluated": false,
+    "correct": null,
+    "outcome": null,
+    "eval_price": null
   }
 ]
