@@ -74,10 +74,10 @@
     "basis_tags": [
       "4.9-breakout-with-conviction"
     ],
-    "evaluated": false,
-    "correct": null,
-    "outcome": null,
-    "eval_price": null
+    "evaluated": true,
+    "correct": true,
+    "outcome": "neither level hit by review date \u2014 graded by direction",
+    "eval_price": 22300.0
   },
   {
     "id": "c830eb8e",
