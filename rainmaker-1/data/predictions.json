@@ -94,5 +94,21 @@
     "correct": null,
     "outcome": null,
     "eval_price": null
+  },
+  {
+    "id": "5cd5dbe2",
+    "ticker": "PET",
+    "date_made": "2026-09-24",
+    "eval_date": "2026-10-08",
+    "entry": 45000.0,
+    "stop": 36900.0,
+    "target": 49500.0,
+    "basis_tags": [
+      "4.9-breakout-with-conviction"
+    ],
+    "evaluated": false,
+    "correct": null,
+    "outcome": null,
+    "eval_price": null
   }
 ]
