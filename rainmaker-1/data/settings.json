@@ -4,6 +4,6 @@
   "monthly_target_pct": 15.0,
   "accuracy_target_pct": 80.0,
   "prediction_eval_days": 14,
-  "review_mode": false,
-  "review_mode_reason": null
+  "review_mode": true,
+  "review_mode_reason": "Prediction accuracy fell to 40.0% across 5 graded calls \u2014 below the 80.0% bar. Requiring 3 confirming signals instead of 2 on new buys until accuracy recovers."
 }
