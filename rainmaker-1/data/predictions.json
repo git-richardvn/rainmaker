@@ -110,5 +110,21 @@
     "correct": null,
     "outcome": null,
     "eval_price": null
+  },
+  {
+    "id": "0c2ef722",
+    "ticker": "GMD",
+    "date_made": "2026-10-07",
+    "eval_date": "2026-10-21",
+    "entry": 54200.0,
+    "stop": 49740.0,
+    "target": 59620.0,
+    "basis_tags": [
+      "4.9-breakout-with-conviction"
+    ],
+    "evaluated": false,
+    "correct": null,
+    "outcome": null,
+    "eval_price": null
   }
 ]
